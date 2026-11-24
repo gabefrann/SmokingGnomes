@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: Smoking Gnomes Inc.
+## Notes: Gnome harvesting Production Report and Recall Notices for <Smoking Gnomes>.
+## Author: <Smoking Gnomes>
+## Version: @project-version@
+## SavedVariables: SmokingGnomesDB
+## IconTexture: Interface\AddOns\SmokingGnomes\Media\logo
+## AddonCompartmentFunc: SmokingGnomes_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: SmokingGnomes_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: SmokingGnomes_OnAddonCompartmentLeave
+
+Core.lua
+Sync.lua
+Bounty.lua
+Ledger.lua
+UI.lua

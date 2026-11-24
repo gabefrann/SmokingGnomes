@@ -1,0 +1,37 @@
+# Push a tag like v0.9.0 and this builds the addon zip and publishes a GitHub release.
+# WowUp ("Install from URL" with this repository) picks new releases up automatically.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the addon zip
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p build/SmokingGnomes
+          rsync -a --exclude '.git*' --exclude '.github' --exclude 'build' --exclude 'README.md' ./ build/SmokingGnomes/
+          sed -i "s/@project-version@/${VERSION#v}/" build/SmokingGnomes/SmokingGnomes.toc
+          (cd build && zip -r "SmokingGnomes-${VERSION}.zip" SmokingGnomes)
+          INTERFACE=$(grep -m1 '^## Interface:' SmokingGnomes.toc | tr -dc '0-9')
+          # release.json tells addon managers which game flavour the zip is for.
+          cat > build/release.json <<EOF
+          {"releases":[{"name":"SmokingGnomes","version":"${VERSION}","filename":"SmokingGnomes-${VERSION}.zip","nolib":false,"metadata":[{"flavor":"forever","interface":${INTERFACE}},{"flavor":"mainline","interface":${INTERFACE}}]}]}
+          EOF
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/SmokingGnomes-${{ github.ref_name }}.zip
+            build/release.json
+          generate_release_notes: true

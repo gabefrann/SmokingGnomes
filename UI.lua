@@ -1,0 +1,921 @@
+-- Smoking Gnomes Inc.: Production Report window, popups, player tooltips,
+-- AddOn compartment button.
+
+local _, ns = ...
+local SG = ns.SG
+
+local UI = {}
+ns.UI = UI
+
+local W, ROW_H, ROWS = 300, 20, 10
+local RECALL_ROWS = 9 -- the officer form takes the last row's space on the Recalls tab
+local PAD = 14
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+local FONT = STANDARD_TEXT_FONT
+
+local LOGO = "Interface\\AddOns\\SmokingGnomes\\Media\\logo"
+local STAR = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12:12:0:0|t"
+local ICON_OPEN = "|TInterface\\GossipFrame\\AvailableQuestIcon:12:12:0:0|t"
+local ICON_DONE = "|TInterface\\RaidFrame\\ReadyCheck-Ready:12:12:0:0|t"
+local ICON_CLOSED = "|TInterface\\RaidFrame\\ReadyCheck-NotReady:12:12:0:0|t"
+
+-- Guild green, taken from the logo (#25783E), plus a lighter tint that stays readable as text.
+local BORDER = { 0.145, 0.471, 0.243 }
+local ACCENT = { 0.30, 0.71, 0.42 }
+local GOLD = { 1.0, 0.82, 0.30 }
+local RED = { 0.90, 0.36, 0.30 }
+local MUTED = { 0.55, 0.55, 0.58 }
+local TEXT = { 0.92, 0.92, 0.93 }
+local COLORS = { red = RED, gold = GOLD, green = ACCENT, white = TEXT }
+local STALE_DAYS = 14
+
+local LAB_NOTES = {
+	"Sample sent to the lab.",
+	"Quality control approved.",
+	"Another batch for R&D.",
+}
+
+local frame, rows, tabs, footer, footerRight, sub, empty, colHeads, form
+local mode = "week"
+local champion -- last week's winner, refreshed with the window
+
+local function text(parent, size, color, justify)
+	local fs = parent:CreateFontString(nil, "OVERLAY")
+	fs:SetFont(FONT, size, "")
+	fs:SetTextColor(unpack(color or TEXT))
+	fs:SetJustifyH(justify or "LEFT")
+	fs:SetWordWrap(false)
+	fs:SetShadowColor(0, 0, 0, 0.8)
+	fs:SetShadowOffset(1, -1)
+	return fs
+end
+
+local function rect(parent, r, g, b, a, layer)
+	local t = parent:CreateTexture(nil, layer or "BACKGROUND")
+	t:SetTexture(WHITE)
+	t:SetVertexColor(r, g, b, a)
+	return t
+end
+
+local function hex(c)
+	return ("%02x%02x%02x"):format(math.floor(c[1] * 255), math.floor(c[2] * 255), math.floor(c[3] * 255))
+end
+
+local function classColor(class)
+	local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+	if c then
+		return c.r, c.g, c.b
+	end
+	return unpack(TEXT)
+end
+
+---------------------------------------------------------------------------
+-- Guild crest: drawn live from the game's own tabard textures and colours, so it is
+-- the real guild emblem at the game's own quality. Falls back to Media\logo.
+---------------------------------------------------------------------------
+
+local CIRCLE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask" -- a white filled circle
+local crests = {}
+
+local function tabardInfo()
+	if SG.db and SG.db.settings.crest == false then
+		return nil
+	end
+	if not (C_GuildInfo and C_GuildInfo.GetGuildTabardInfo) then
+		return nil
+	end
+	local ok, info = pcall(C_GuildInfo.GetGuildTabardInfo, "player")
+	if ok and type(info) == "table" and SG.num(info.emblemFileID) then
+		return info
+	end
+	return nil
+end
+
+local function rgb(color)
+	if type(color) == "table" and color.GetRGB then
+		local ok, r, g, b = pcall(color.GetRGB, color)
+		if ok and SG.num(r) and SG.num(g) and SG.num(b) then
+			return r, g, b
+		end
+	end
+	return 1, 1, 1
+end
+
+local function applyCrest(c)
+	local info = tabardInfo()
+	local live = info ~= nil
+	c.fallback:SetShown(not live)
+	c.ring:SetShown(live)
+	c.bg:SetShown(live)
+	c.emblem:SetShown(live)
+	if live then
+		c.ring:SetVertexColor(rgb(info.borderColor))
+		c.bg:SetVertexColor(rgb(info.backgroundColor))
+		c.emblem:SetTexture(info.emblemFileID)
+		c.emblem:SetVertexColor(rgb(info.emblemColor))
+	end
+end
+
+local function makeCrest(parent, size)
+	local c = CreateFrame("Frame", nil, parent)
+	c:SetSize(size, size)
+	c.fallback = c:CreateTexture(nil, "ARTWORK")
+	c.fallback:SetTexture(LOGO)
+	c.fallback:SetAllPoints()
+	c.ring = c:CreateTexture(nil, "ARTWORK", nil, 1)
+	c.ring:SetTexture(CIRCLE)
+	c.ring:SetAllPoints()
+	c.bg = c:CreateTexture(nil, "ARTWORK", nil, 2)
+	c.bg:SetTexture(CIRCLE)
+	c.bg:SetPoint("CENTER")
+	c.bg:SetSize(size * 0.86, size * 0.86)
+	c.emblem = c:CreateTexture(nil, "ARTWORK", nil, 3)
+	c.emblem:SetPoint("CENTER")
+	c.emblem:SetSize(size * 0.74, size * 0.74)
+	crests[#crests + 1] = c
+	applyCrest(c)
+	return c
+end
+
+function UI.RefreshCrests()
+	for _, c in ipairs(crests) do
+		applyCrest(c)
+	end
+end
+
+-- A large crest on a plain background plus the exact tabard data, for screenshots
+-- and for rebuilding the logo outside the game.
+local sheet
+function UI.ShowCrestSheet()
+	if not sheet then
+		sheet = CreateFrame("Frame", "SmokingGnomesCrestSheet", UIParent, "BackdropTemplate")
+		sheet:SetSize(560, 640)
+		sheet:SetPoint("CENTER")
+		sheet:SetFrameStrata("DIALOG")
+		sheet:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+		sheet:SetBackdropColor(0.06, 0.06, 0.07, 1)
+		sheet:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
+		sheet:EnableMouse(true)
+		sheet:SetScript("OnMouseUp", sheet.Hide)
+		tinsert(UISpecialFrames, "SmokingGnomesCrestSheet")
+		sheet.crest = makeCrest(sheet, 512)
+		sheet.crest:SetPoint("TOP", 0, -24)
+		sheet.info = text(sheet, 12, TEXT, "CENTER")
+		sheet.info:SetPoint("BOTTOM", 0, 44)
+		sheet.hint = text(sheet, 11, MUTED, "CENTER")
+		sheet.hint:SetPoint("BOTTOM", 0, 20)
+		sheet.hint:SetText("Take a screenshot (Print Screen), then click or press Escape to close.")
+	end
+	applyCrest(sheet.crest)
+	local info = tabardInfo()
+	if info then
+		local function hexOf(c)
+			local r, g, b = rgb(c)
+			return ("#%02X%02X%02X"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+		end
+		local line = ("Emblem file %d   ·   Emblem %s   ·   Background %s   ·   Border %s"):format(
+			info.emblemFileID, hexOf(info.emblemColor), hexOf(info.backgroundColor), hexOf(info.borderColor))
+		sheet.info:SetText(line)
+		SG.print("Guild crest: " .. line)
+	else
+		sheet.info:SetText("The game didn't provide the guild tabard here, so this is the logo file.")
+	end
+	sheet:Show()
+end
+
+---------------------------------------------------------------------------
+-- Window
+---------------------------------------------------------------------------
+
+local function savePosition()
+	local point, _, rel, x, y = frame:GetPoint()
+	SG.db.settings.pos = { point, rel, x, y }
+end
+
+local function makeRow()
+	local r = CreateFrame("Frame", nil, frame)
+	r:SetSize(W - PAD * 2, ROW_H)
+	r.hl = rect(r, ACCENT[1], ACCENT[2], ACCENT[3], 0.10)
+	r.hl:SetAllPoints()
+	r.rank = text(r, 11, MUTED, "RIGHT")
+	r.rank:SetPoint("LEFT", 0, 0)
+	r.rank:SetWidth(20)
+	r.name = text(r, 12)
+	r.name:SetPoint("LEFT", 28, 0)
+	r.assists = text(r, 11, MUTED, "RIGHT")
+	r.assists:SetPoint("RIGHT", 0, 0)
+	r.kills = text(r, 12, TEXT, "RIGHT")
+	r.kills:SetPoint("RIGHT", r.assists, "LEFT", -6, 0)
+	r:EnableMouse(true)
+	r:SetScript("OnEnter", function(self)
+		if not self.tip then
+			return
+		end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		for idx, line in ipairs(self.tip) do
+			if idx == 1 then
+				GameTooltip:AddLine(line, 1, 1, 1)
+			elseif idx == 2 and self.tipColor then
+				GameTooltip:AddLine(line, self.tipColor[1], self.tipColor[2], self.tipColor[3])
+			else
+				GameTooltip:AddLine(line, MUTED[1], MUTED[2], MUTED[3])
+			end
+		end
+		GameTooltip:Show()
+	end)
+	r:SetScript("OnLeave", GameTooltip_Hide)
+	r:SetScript("OnMouseUp", function(self, button)
+		if button == "RightButton" and IsShiftKeyDown() and self.cancelTarget then
+			local ok, err = ns.Bounty.Cancel(self.cancelTarget)
+			SG.print(ok and ("Recall Notice on " .. self.cancelTarget .. " cancelled.") or err)
+		end
+	end)
+	return r
+end
+
+-- Column widths differ between the boards and the Recalls tab.
+local function layoutRow(r, recall)
+	r.assists:SetWidth(recall and 64 or 56)
+	r.kills:SetWidth(recall and 84 or 50)
+	r.kills:SetFont(FONT, recall and 11 or 12, "")
+	r.name:SetWidth(recall and 92 or 150)
+	r.cancelTarget = nil
+end
+
+local function makeTab(label, key, x)
+	local b = CreateFrame("Button", nil, frame)
+	b.label = text(b, 12)
+	b.label:SetPoint("LEFT")
+	b.label:SetText(label)
+	b:SetSize(b.label:GetStringWidth() + 2, 20)
+	b:SetPoint("TOPLEFT", x, -58)
+	b.line = rect(b, ACCENT[1], ACCENT[2], ACCENT[3], 1, "ARTWORK")
+	b.line:SetHeight(2)
+	b.line:SetPoint("BOTTOMLEFT", 0, -3)
+	b.line:SetPoint("BOTTOMRIGHT", 0, -3)
+	b.key = key
+	b:SetScript("OnClick", function()
+		mode = key
+		UI.Refresh()
+	end)
+	return b
+end
+
+-- A flat text box that matches the window, with grey placeholder text.
+local function makeInput(parent, width, placeholder, maxLetters)
+	local eb = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+	eb:SetSize(width, 20)
+	eb:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+	eb:SetBackdropColor(1, 1, 1, 0.04)
+	eb:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 0.8)
+	eb:SetFont(FONT, 11, "")
+	eb:SetTextColor(unpack(TEXT))
+	eb:SetTextInsets(6, 6, 0, 0)
+	eb:SetAutoFocus(false)
+	eb:SetMaxLetters(maxLetters)
+	eb.hint = text(eb, 11, MUTED)
+	eb.hint:SetPoint("LEFT", 6, 0)
+	eb.hint:SetText(placeholder)
+	eb:SetScript("OnTextChanged", function(self)
+		self.hint:SetShown(self:GetText() == "")
+	end)
+	eb:SetScript("OnEscapePressed", eb.ClearFocus)
+	eb:SetScript("OnEditFocusGained", function(self)
+		self:SetBackdropBorderColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+	end)
+	eb:SetScript("OnEditFocusLost", function(self)
+		self:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 0.8)
+	end)
+	return eb
+end
+
+local function postFromForm()
+	local target, reward = form.target:GetText(), form.reward:GetText()
+	if target == "" then
+		local okN, tName, tRealm = pcall(UnitName, "target")
+		local okP, isPlayer = pcall(UnitIsPlayer, "target")
+		if okN and okP and not SG.secret(isPlayer) and isPlayer == true and SG.str(tName) then
+			target = SG.str(tRealm) and (tName .. "-" .. tRealm) or tName
+		end
+	end
+	local ok, err = ns.Bounty.Post(target, reward)
+	if ok then
+		form.target:SetText("")
+		form.reward:SetText("")
+		form.target:ClearFocus()
+		form.reward:ClearFocus()
+	else
+		SG.print(err)
+	end
+end
+
+local function buildForm()
+	form = CreateFrame("Frame", nil, frame)
+	form:SetSize(W - PAD * 2, 22)
+	form:SetPoint("TOPLEFT", PAD, -106 - RECALL_ROWS * ROW_H - 4)
+	form.target = makeInput(form, 104, "Name (or target)", 40)
+	form.target:SetPoint("LEFT", 0, 0)
+	form.reward = makeInput(form, 104, "Reward", 30)
+	form.reward:SetPoint("LEFT", form.target, "RIGHT", 6, 0)
+
+	local post = CreateFrame("Button", nil, form, "BackdropTemplate")
+	post:SetSize(W - PAD * 2 - 104 * 2 - 12, 20)
+	post:SetPoint("RIGHT", 0, 0)
+	post:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+	post:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.35)
+	post:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
+	post.label = text(post, 11, TEXT, "CENTER")
+	post.label:SetPoint("CENTER")
+	post.label:SetText("Post")
+	post:SetScript("OnEnter", function(self)
+		self:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.7)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Post a Recall Notice", 1, 1, 1)
+		GameTooltip:AddLine("Leave the name empty to use your current target.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:AddLine("The first guildmate to kill them claims it.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:Show()
+	end)
+	post:SetScript("OnLeave", function(self)
+		self:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.35)
+		GameTooltip:Hide()
+	end)
+	post:SetScript("OnClick", postFromForm)
+	form.target:SetScript("OnEnterPressed", function()
+		form.reward:SetFocus()
+	end)
+	form.reward:SetScript("OnEnterPressed", postFromForm)
+	form.target:SetScript("OnTabPressed", function()
+		form.reward:SetFocus()
+	end)
+	form:Hide()
+end
+
+local function build()
+	frame = CreateFrame("Frame", "SmokingGnomesFrame", UIParent, "BackdropTemplate")
+	frame:SetSize(W, 104 + (ROWS + 1) * ROW_H + 50)
+	frame:SetFrameStrata("MEDIUM")
+	frame:SetClampedToScreen(true)
+	frame:SetMovable(true)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart", frame.StartMoving)
+	frame:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		savePosition()
+	end)
+	frame:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+	frame:SetBackdropColor(0.06, 0.06, 0.07, 0.98)
+	frame:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
+	frame:Hide()
+	tinsert(UISpecialFrames, "SmokingGnomesFrame") -- Escape closes it
+
+	local pos = SG.db.settings.pos
+	if pos then
+		frame:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+	else
+		frame:SetPoint("CENTER", 0, 60)
+	end
+
+	local logo = makeCrest(frame, 34)
+	logo:SetPoint("TOPLEFT", PAD - 2, -10)
+
+	local title = text(frame, 14, TEXT)
+	title:SetPoint("TOPLEFT", PAD + 40, -13)
+	title:SetText("Smoking Gnomes Inc.")
+
+	local close = CreateFrame("Button", nil, frame)
+	close:SetSize(20, 20)
+	close:SetPoint("TOPRIGHT", -8, -10)
+	close.x = text(close, 16, MUTED, "CENTER")
+	close.x:SetPoint("CENTER")
+	close.x:SetText("×")
+	close:SetScript("OnClick", function()
+		frame:Hide()
+	end)
+	close:SetScript("OnEnter", function(self)
+		self.x:SetTextColor(unpack(TEXT))
+	end)
+	close:SetScript("OnLeave", function(self)
+		self.x:SetTextColor(unpack(MUTED))
+	end)
+
+	sub = text(frame, 11, MUTED)
+	sub:SetPoint("TOPLEFT", PAD + 40, -31)
+	sub:SetPoint("RIGHT", -PAD, 0)
+
+	local GAP = 14
+	tabs = { makeTab("Weekly Yield", "week", PAD) }
+	local x = PAD + tabs[1]:GetWidth() + GAP
+	tabs[2] = makeTab("Lifetime", "all", x)
+	x = x + tabs[2]:GetWidth() + GAP
+	tabs[3] = makeTab("Recalls", "recall", x)
+	x = x + tabs[3]:GetWidth() + GAP
+	tabs[4] = makeTab("Lab Log", "mine", x)
+
+	local div = rect(frame, BORDER[1], BORDER[2], BORDER[3], 0.6, "ARTWORK")
+	div:SetHeight(1)
+	div:SetPoint("TOPLEFT", PAD, -82)
+	div:SetPoint("TOPRIGHT", -PAD, -82)
+
+	colHeads = CreateFrame("Frame", nil, frame)
+	colHeads:SetSize(W - PAD * 2, 14)
+	colHeads:SetPoint("TOPLEFT", PAD, -88)
+	colHeads.name = text(colHeads, 10, MUTED)
+	colHeads.name:SetPoint("LEFT", 28, 0)
+	colHeads.assists = text(colHeads, 10, MUTED, "RIGHT")
+	colHeads.assists:SetPoint("RIGHT", 0, 0)
+	colHeads.kills = text(colHeads, 10, MUTED, "RIGHT")
+
+	rows = {}
+	for i = 1, ROWS + 1 do
+		local r = makeRow()
+		local y = -106 - (i - 1) * ROW_H - (i > ROWS and 6 or 0)
+		r:SetPoint("TOPLEFT", PAD, y)
+		rows[i] = r
+	end
+
+	buildForm()
+
+	empty = text(frame, 12, MUTED, "CENTER")
+	empty:SetPoint("TOP", 0, -150)
+	empty:SetWidth(W - PAD * 4)
+	empty:SetWordWrap(true)
+
+	local div2 = rect(frame, BORDER[1], BORDER[2], BORDER[3], 0.6, "ARTWORK")
+	div2:SetHeight(1)
+	div2:SetPoint("BOTTOMLEFT", PAD, 34)
+	div2:SetPoint("BOTTOMRIGHT", -PAD, 34)
+
+	footer = text(frame, 11, TEXT)
+	footer:SetPoint("BOTTOMLEFT", PAD, 14)
+	footerRight = text(frame, 11, MUTED, "RIGHT")
+	footerRight:SetPoint("BOTTOMRIGHT", -PAD, 14)
+
+	frame:SetScript("OnShow", UI.Refresh)
+end
+
+local function setHeads(name, kills, assists, killsRight)
+	colHeads.name:SetText(name)
+	colHeads.kills:SetText(kills)
+	colHeads.assists:SetText(assists)
+	colHeads.kills:ClearAllPoints()
+	colHeads.kills:SetPoint("RIGHT", killsRight, 0)
+end
+
+local function displayName(name)
+	local short = SG.shortName(name)
+	if name == champion then
+		return STAR .. " " .. short
+	end
+	return short
+end
+
+---------------------------------------------------------------------------
+-- Boards
+---------------------------------------------------------------------------
+
+local function setRow(r, rank, name, kills, assists, e, isMe)
+	r:Show()
+	r.hl:SetShown(isMe)
+	r.rank:SetText(rank or "")
+	r.name:SetText(displayName(name))
+	r.name:SetTextColor(classColor(e and e.class))
+	local active = e and math.max(e.seen or 0, e.u or 0) or 0
+	local stale = e and not isMe and (SG.now() - active) > STALE_DAYS * 86400
+	r.name:SetAlpha(stale and 0.5 or 1)
+	r.kills:SetText(kills)
+	r.assists:SetText(assists > 0 and assists or "")
+
+	local title = SG.jobTitle(name, e and e.total)
+	if name == champion then
+		title = title .. "  ·  Employee of the Week"
+	end
+	local last = "No harvests yet"
+	if e and e.lastVictim then
+		last = ("Last harvest: %s, %s"):format(e.lastVictim, SG.ago(e.lastKill))
+	elseif e and e.lastKill then
+		last = "Last harvest " .. SG.ago(e.lastKill)
+	end
+	r.tipColor = ACCENT
+	r.tip = { SG.shortName(name), title, last }
+	local recalls = ns.Bounty.CompletedBy(name)
+	if recalls > 0 then
+		r.tip[#r.tip + 1] = ("Recalls completed: %d"):format(recalls)
+	end
+	if isMe then
+		r.tip[#r.tip + 1] = "That's you"
+	elseif e and e.seen then
+		r.tip[#r.tip + 1] = "Online " .. SG.ago(e.seen)
+	else
+		r.tip[#r.tip + 1] = "Heard through coworkers"
+	end
+	if e and (e.bad or 0) > 0 then
+		r.tip[#r.tip + 1] = ("|cffd08050%d report(s) rejected as invalid|r"):format(e.bad)
+	end
+end
+
+local function myCareer(e)
+	local title, nextTitle, need = SG.jobTitle(SG.myName, e.total)
+	if nextTitle then
+		return title, ("%d to %s"):format(need, nextTitle)
+	end
+	return title, nil
+end
+
+local function refreshBoard()
+	setHeads("EMPLOYEE", "HARVESTED", "ASSISTS", -62)
+	local list = SG.ranked(mode)
+	local myRank, shown = nil, 0
+	for i, row in ipairs(list) do
+		if row.name == SG.myName then
+			myRank = i
+		end
+	end
+
+	for i = 1, ROWS do
+		local row = list[i]
+		if row and (row.kills > 0 or row.assists > 0) then
+			setRow(rows[i], i, row.name, row.kills, row.assists, row.e, row.name == SG.myName)
+			shown = shown + 1
+		else
+			rows[i]:Hide()
+		end
+	end
+
+	-- Your own row under the top 10 when you're outside it.
+	local me = rows[ROWS + 1]
+	local mine = myRank and list[myRank]
+	if mine and myRank > ROWS and (mine.kills > 0 or mine.assists > 0) then
+		setRow(me, myRank, mine.name, mine.kills, mine.assists, mine.e, true)
+	else
+		me:Hide()
+	end
+
+	colHeads:SetShown(shown > 0)
+	empty:SetShown(shown == 0)
+	empty:SetText((mode == "week" and "No gnomes harvested this week." or "No gnomes harvested yet.")
+		.. "\n\n|cff8c8c94Land the killing blow on a gnome\nin the open world to start production.|r")
+
+	local e = SG.me()
+	local title = myCareer(e)
+	local count = mode == "week" and e.week or e.total
+	if count > 0 and myRank then
+		footer:SetText(("You: #%d  ·  |cff%s%s|r"):format(myRank, hex(ACCENT), title))
+	else
+		footer:SetText(("You: |cff%s%s|r"):format(hex(ACCENT), title))
+	end
+	footerRight:SetText("Resets in " .. SG.duration(SG.secondsUntilReset()))
+end
+
+---------------------------------------------------------------------------
+-- Recalls tab
+---------------------------------------------------------------------------
+
+local function refreshRecalls()
+	setHeads("TARGET", "REWARD", "STATUS", -70)
+	rows[ROWS]:Hide()
+	rows[ROWS + 1]:Hide()
+	local officer = SG.IsOfficer(SG.myName) == true
+	form:SetShown(officer)
+
+	local list = ns.Bounty.List()
+	local now = SG.now()
+	for i = 1, RECALL_ROWS do
+		local r, row = rows[i], list[i]
+		if row then
+			local b, state = row.b, row.state
+			r:Show()
+			r.hl:Hide()
+			r.name:SetAlpha(1)
+			r.name:SetText(b.target)
+			r.tipColor = GOLD
+			r.tip = { b.target, "Reward: " .. b.reward, ("Posted by %s, %s"):format(SG.shortName(b.poster), SG.ago(b.created)) }
+			if state == "open" then
+				r.rank:SetText(ICON_OPEN)
+				r.name:SetTextColor(unpack(TEXT))
+				r.kills:SetText(b.reward)
+				r.kills:SetTextColor(unpack(GOLD))
+				r.assists:SetText(SG.duration(b.expires - now) .. " left")
+				r.tip[#r.tip + 1] = "Kill them in the open world to claim it."
+				if b.poster == SG.myName then
+					r.cancelTarget = b.target
+					r.tip[#r.tip + 1] = "Shift + right-click to cancel."
+				end
+			else
+				r.name:SetTextColor(unpack(MUTED))
+				r.kills:SetText(b.reward)
+				r.kills:SetTextColor(unpack(MUTED))
+				if state == "claimed" then
+					local c = row.claim
+					r.rank:SetText(ICON_DONE)
+					r.assists:SetText(SG.shortName(c.claimer))
+					r.assists:SetTextColor(unpack(ACCENT))
+					local where = (c.zone and c.zone ~= "") and (" in " .. c.zone) or ""
+					r.tip[#r.tip + 1] = ("Recalled by %s%s, %s"):format(SG.shortName(c.claimer), where, SG.ago(c.t))
+				else
+					r.rank:SetText(ICON_CLOSED)
+					r.assists:SetText(state == "cancelled" and "cancelled" or "expired")
+				end
+			end
+		else
+			r:Hide()
+		end
+	end
+
+	colHeads:SetShown(#list > 0)
+	empty:SetShown(#list == 0)
+	empty:SetText("No Recall Notices.\n\n|cff8c8c94" .. (officer
+		and "Post one below. The first guildmate\nto kill the target claims it.|r"
+		or "Officers post them. The first guildmate\nto kill the target claims it.|r"))
+
+	local open = ns.Bounty.OpenCount()
+	footer:SetText(open == 1 and "1 open notice" or (open .. " open notices"))
+	local mine = ns.Bounty.CompletedBy(SG.myName)
+	footerRight:SetText(mine > 0 and ("You've completed " .. mine) or "")
+end
+
+---------------------------------------------------------------------------
+-- Lab Log
+---------------------------------------------------------------------------
+
+local function refreshMine()
+	setHeads("", "", "", -62)
+	colHeads:Hide()
+	rows[ROWS + 1]:Hide()
+	local list = SG.db.recent[SG.myName] or {}
+	for i = 1, ROWS do
+		local k, r = list[i], rows[i]
+		if k then
+			r:Show()
+			r.hl:Hide()
+			r.rank:SetText("")
+			r.name:SetText((k.name or "Unknown gnome") .. (k.test and " (test)" or ""))
+			r.name:SetTextColor(unpack(k.assist and MUTED or TEXT))
+			r.name:SetAlpha(1)
+			r.tipColor = nil
+			r.tip = { k.name or "Unknown gnome", k.zone or "Unknown zone", SG.ago(k.t) }
+			local v = not k.test and ns.Ledger.Victim(k.name, k.realm)
+			if k.assist then
+				r.kills:SetText("assist")
+			elseif v and v.n > 1 then
+				r.kills:SetText(v.n .. "×")
+				r.tip[#r.tip + 1] = ("Smoked by the company %d×"):format(v.n)
+			else
+				r.kills:SetText("")
+			end
+			r.kills:SetTextColor(unpack(MUTED))
+			r.assists:SetText(SG.ago(k.t))
+		else
+			r:Hide()
+		end
+	end
+	empty:SetShown(#list == 0)
+	empty:SetText("Your harvests will be logged here.")
+	local e = SG.me()
+	local title, progress = myCareer(e)
+	footer:SetText(("|cff%s%s|r"):format(hex(ACCENT), title))
+	footerRight:SetText(progress or ("%d lifetime"):format(e.total))
+end
+
+function UI.Refresh()
+	if not frame or not frame:IsShown() then
+		return
+	end
+	champion = SG.lastWeekWinner()
+	UI.RefreshCrests() -- tabard data can arrive after login
+	for _, t in ipairs(tabs) do
+		local active = t.key == mode
+		t.label:SetTextColor(unpack(active and TEXT or MUTED))
+		t.line:SetShown(active)
+	end
+	local recall = mode == "recall"
+	for i = 1, ROWS + 1 do
+		layoutRow(rows[i], recall)
+		rows[i].kills:SetTextColor(unpack(TEXT))
+		rows[i].assists:SetTextColor(unpack(MUTED))
+	end
+	if not recall then
+		form:Hide()
+	end
+
+	if champion then
+		local _, n = SG.lastWeekWinner()
+		sub:SetText(("%s Employee of the Week: |cff%s%s|r (%d)"):format(STAR, hex(GOLD), SG.shortName(champion), n))
+	else
+		sub:SetText("Production Report")
+	end
+
+	if recall then
+		refreshRecalls()
+	elseif mode == "mine" then
+		refreshMine()
+	else
+		refreshBoard()
+	end
+end
+
+function UI.Toggle()
+	if not frame then
+		return
+	end
+	frame:SetShown(not frame:IsShown())
+end
+
+---------------------------------------------------------------------------
+-- Popups: small, centred, fade out.
+---------------------------------------------------------------------------
+
+local toast
+
+local function buildToast()
+	toast = CreateFrame("Frame", nil, UIParent)
+	toast:SetSize(400, 60)
+	toast:SetPoint("TOP", 0, -170)
+	toast:SetFrameStrata("HIGH")
+	toast:Hide()
+	toast.main = text(toast, 20, TEXT, "CENTER")
+	toast.main:SetPoint("TOP", 18, 0)
+	toast.logo = makeCrest(toast, 36)
+	toast.logo:SetPoint("RIGHT", toast.main, "LEFT", -10, -8)
+	toast.sub = text(toast, 12, MUTED, "CENTER")
+	toast.sub:SetPoint("TOP", toast.main, "BOTTOM", 0, -4)
+	toast.note = text(toast, 11, MUTED, "CENTER")
+	toast.note:SetPoint("TOP", toast.sub, "BOTTOM", 0, -3)
+	toast.note:SetAlpha(0.75)
+
+	local ag = toast:CreateAnimationGroup()
+	local fadeIn = ag:CreateAnimation("Alpha")
+	fadeIn:SetFromAlpha(0)
+	fadeIn:SetToAlpha(1)
+	fadeIn:SetDuration(0.2)
+	fadeIn:SetOrder(1)
+	local fadeOut = ag:CreateAnimation("Alpha")
+	fadeOut:SetFromAlpha(1)
+	fadeOut:SetToAlpha(0)
+	fadeOut:SetStartDelay(3.5)
+	fadeOut:SetDuration(0.6)
+	fadeOut:SetOrder(2)
+	ag:SetScript("OnFinished", function()
+		toast:Hide()
+	end)
+	toast.anim = ag
+end
+
+-- A popup with a title, one detail line and an optional note. color: red, gold, green, white.
+function UI.Notice(main, color, subText, note)
+	if not SG.db.settings.toast then
+		return
+	end
+	if not toast then
+		buildToast()
+	end
+	toast.main:SetText(main)
+	toast.main:SetTextColor(unpack(COLORS[color] or TEXT))
+	toast.sub:SetText(subText or "")
+	toast.note:SetText(note or "")
+	toast.anim:Stop()
+	toast:Show()
+	toast.anim:Play()
+end
+
+function UI.Toast(e, info)
+	local parts = { info.victim or "Unknown gnome" }
+	if info.zone then
+		parts[#parts + 1] = info.zone
+	end
+	local main, color, note
+	if info.promoted then
+		main, color = "Promoted: " .. info.promoted, "gold"
+		note = ("%d gnomes harvested. HR has been notified."):format(e.total)
+	elseif info.assist then
+		main, color, note = "Gnome assist", "white", "Sample sent to the lab."
+	else
+		main, color = "Gnome smoked!", "green"
+		parts[#parts + 1] = e.week .. " this week"
+		note = LAB_NOTES[math.random(#LAB_NOTES)]
+	end
+	UI.Notice(main, color, table.concat(parts, "  ·  ") .. (info.test and "  (test)" or ""), note)
+end
+
+---------------------------------------------------------------------------
+-- Player tooltips: coworkers show their job title to everyone running the addon.
+---------------------------------------------------------------------------
+
+local function unitFullName(unit)
+	local ok, name, realm = pcall(UnitName, unit)
+	name = ok and SG.str(name)
+	if not name then
+		return nil
+	end
+	realm = SG.str(realm)
+	if realm then
+		return name .. "-" .. realm:gsub("[%s%-]", "")
+	end
+	return SG.fullName(name)
+end
+
+local function onUnitTooltip(tt)
+	if tt ~= GameTooltip or not SG.db or not SG.myName then
+		return
+	end
+	local ok, _, unit = pcall(tt.GetUnit, tt)
+	unit = ok and SG.str(unit)
+	if not unit then
+		return
+	end
+	local okP, isPlayer = pcall(UnitIsPlayer, unit)
+	if not okP or SG.secret(isPlayer) or isPlayer ~= true then
+		return
+	end
+	local full = unitFullName(unit)
+	if not full then
+		return
+	end
+	-- Victims: how often the company has smoked this player.
+	local okN, vName, vRealm = pcall(UnitName, unit)
+	local v = okN and SG.str(vName) and ns.Ledger.Victim(vName, SG.str(vRealm))
+	if v and v.n > 0 then
+		tt:AddLine(("Smoked by the company: %d×"):format(v.n), ACCENT[1], ACCENT[2], ACCENT[3])
+		local label = ns.Ledger.Label(v.n)
+		local top, topN = ns.Ledger.TopKiller(v)
+		local detail = {}
+		if label then
+			detail[#detail + 1] = label
+		end
+		if top and topN > 1 then
+			detail[#detail + 1] = ("mostly %s (%d)"):format(SG.shortName(top), topN)
+		elseif v.lastBy then
+			detail[#detail + 1] = ("last by %s, %s"):format(SG.shortName(v.lastBy), SG.ago(v.last))
+		end
+		if #detail > 0 then
+			tt:AddLine(table.concat(detail, "  ·  "), MUTED[1], MUTED[2], MUTED[3])
+		end
+	end
+	local e = SG.db.players[full]
+	if e then
+		tt:AddLine("Smoking Gnomes Inc.  ·  " .. SG.jobTitle(full, e.total), ACCENT[1], ACCENT[2], ACCENT[3])
+		if full == SG.lastWeekWinner() then
+			tt:AddLine(STAR .. " Employee of the Week", GOLD[1], GOLD[2], GOLD[3])
+		end
+	end
+	-- Enemies with an open Recall Notice.
+	local short = full:match("^[^%-]+")
+	for _, row in ipairs(ns.Bounty.List()) do
+		if row.state == "open" then
+			local tName = row.b.target:match("^[^%-]+")
+			if tName and short and tName:lower() == short:lower() then
+				tt:AddLine(ICON_OPEN .. " Recall Notice  ·  " .. row.b.reward, RED[1], RED[2], RED[3])
+				break
+			end
+		end
+	end
+end
+
+local function hookTooltips()
+	local hooked = false
+	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
+		hooked = pcall(TooltipDataProcessor.AddTooltipPostCall, Enum.TooltipDataType.Unit, function(tt)
+			pcall(onUnitTooltip, tt)
+		end)
+	end
+	if not hooked and GameTooltip:HasScript("OnTooltipSetUnit") then
+		GameTooltip:HookScript("OnTooltipSetUnit", function(tt)
+			pcall(onUnitTooltip, tt)
+		end)
+	end
+end
+
+---------------------------------------------------------------------------
+-- Init and AddOn compartment
+---------------------------------------------------------------------------
+
+function UI.Init()
+	if not frame then
+		build()
+		hookTooltips()
+	end
+end
+
+function SmokingGnomes_OnAddonCompartmentClick()
+	UI.Toggle()
+end
+
+function SmokingGnomes_OnAddonCompartmentEnter(_, button)
+	local e = SG.me()
+	GameTooltip:SetOwner(button or UIParent, "ANCHOR_LEFT")
+	GameTooltip:AddLine("Smoking Gnomes Inc.", 1, 1, 1)
+	GameTooltip:AddLine(("%s  ·  %d this week"):format(SG.jobTitle(SG.myName, e.total), e.week), ACCENT[1], ACCENT[2], ACCENT[3])
+	local open = ns.Bounty.OpenCount()
+	if open > 0 then
+		GameTooltip:AddLine(("%d open Recall Notice%s"):format(open, open == 1 and "" or "s"), RED[1], RED[2], RED[3])
+	end
+	if SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) then
+		GameTooltip:AddLine(("Update available: %s"):format(SG.latestRelease), GOLD[1], GOLD[2], GOLD[3])
+	end
+	GameTooltip:AddLine("Click to open the Production Report", MUTED[1], MUTED[2], MUTED[3])
+	GameTooltip:Show()
+end
+
+function SmokingGnomes_OnAddonCompartmentLeave()
+	GameTooltip:Hide()
+end

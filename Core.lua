@@ -1,0 +1,821 @@
+-- Smoking Gnomes: kill detection, counting and storage.
+
+local ADDON, ns = ...
+
+local SG = {}
+ns.SG = SG
+
+SG.VERSION = 1 -- sync protocol version (unchanged as long as old and new clients understand each other)
+
+-- Release version from the .toc. The release packager writes the git tag in there;
+-- an unpackaged copy reads "@project-version@" and counts as a dev build.
+do
+	local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+	local ok, v = pcall(get, ADDON, "Version")
+	v = ok and type(v) == "string" and v:gsub("^v", "") or ""
+	SG.RELEASE = v:match("^%d+%.%d+") and v or "dev"
+end
+
+-- Compares "1.2.3" style versions: returns true when a is newer than b.
+function SG.newer(a, b)
+	if type(a) ~= "string" or type(b) ~= "string" or a == "dev" or b == "dev" then
+		return false
+	end
+	local pa, pb = {}, {}
+	for n in a:gmatch("%d+") do pa[#pa + 1] = tonumber(n) end
+	for n in b:gmatch("%d+") do pb[#pb + 1] = tonumber(n) end
+	for i = 1, math.max(#pa, #pb) do
+		local x, y = pa[i] or 0, pb[i] or 0
+		if x ~= y then
+			return x > y
+		end
+	end
+	return false
+end
+SG.PREFIX = "SmokingGnomes"
+SG.ACCENT = "4cb56b"
+
+local DEDUPE_SECONDS = 10    -- ignore a repeat PARTY_KILL for the same target
+local PENDING_TTL = 120      -- how long a kill with an unreadable race waits for combat to end
+local RECENT_MAX = 25        -- kills kept in "My kills"
+local PRUNE_DAYS = 90        -- forget guildies with no kills not seen for this long
+local WEEK = 7 * 86400
+
+---------------------------------------------------------------------------
+-- Secret-value guards. Never compare or do math on a value before these.
+---------------------------------------------------------------------------
+
+local issecret = _G.issecretvalue
+
+function SG.secret(v)
+	if v == nil or type(issecret) ~= "function" then
+		return false
+	end
+	local ok, s = pcall(issecret, v)
+	return (not ok) or s == true
+end
+
+function SG.str(v)
+	if SG.secret(v) or type(v) ~= "string" or v == "" then
+		return nil
+	end
+	return v
+end
+
+function SG.num(v)
+	if SG.secret(v) or type(v) ~= "number" then
+		return nil
+	end
+	return v
+end
+
+local str, num = SG.str, SG.num
+
+local function call(fn, ...)
+	if type(fn) ~= "function" then
+		return false
+	end
+	return pcall(fn, ...)
+end
+
+---------------------------------------------------------------------------
+-- Time, weeks, names
+---------------------------------------------------------------------------
+
+function SG.now()
+	local ok, t = call(GetServerTime)
+	return (ok and num(t)) or time()
+end
+
+local function secondsUntilReset()
+	if C_DateAndTime then
+		local ok, s = call(C_DateAndTime.GetSecondsUntilWeeklyReset)
+		s = ok and num(s)
+		if s and s > 0 and s <= WEEK then
+			return s
+		end
+	end
+	-- Fallback: EU reset, Wednesday 07:00 UTC. Epoch day 0 was a Thursday, so Wednesday is day % 7 == 6.
+	local now = SG.now()
+	local d = math.floor((now - 7 * 3600) / 86400)
+	local k = (6 - d % 7) % 7
+	if k == 0 then
+		k = 7
+	end
+	return (d + k) * 86400 + 7 * 3600 - now
+end
+SG.secondsUntilReset = secondsUntilReset
+
+-- A week is identified by the day number of its *next* reset, so every client agrees.
+function SG.weekId()
+	return math.floor((SG.now() + secondsUntilReset()) / 86400)
+end
+
+function SG.fullName(name)
+	name = str(name)
+	if not name then
+		return nil
+	end
+	if not name:find("-", 1, true) then
+		local ok, realm = call(GetNormalizedRealmName)
+		realm = ok and str(realm)
+		if realm then
+			name = name .. "-" .. realm
+		end
+	end
+	return name
+end
+
+function SG.shortName(full)
+	if not full then
+		return "?"
+	end
+	local ok, n = call(Ambiguate, full, "none")
+	return (ok and str(n)) or full
+end
+
+function SG.ago(t)
+	if not t or t <= 0 then
+		return "never"
+	end
+	local d = SG.now() - t
+	if d < 60 then
+		return "just now"
+	elseif d < 3600 then
+		return math.floor(d / 60) .. "m ago"
+	elseif d < 86400 then
+		return math.floor(d / 3600) .. "h ago"
+	end
+	return math.floor(d / 86400) .. "d ago"
+end
+
+function SG.duration(s)
+	s = math.max(0, math.floor(s or 0))
+	local d, h, m = math.floor(s / 86400), math.floor(s % 86400 / 3600), math.floor(s % 3600 / 60)
+	if d > 0 then
+		return d .. "d " .. h .. "h"
+	end
+	return h .. "h " .. m .. "m"
+end
+
+function SG.print(msg)
+	print("|cff" .. SG.ACCENT .. "Smoking Gnomes Inc.|r " .. msg)
+end
+
+---------------------------------------------------------------------------
+-- Storage. One entry per character (Name-Realm) in the account-wide DB.
+-- entry = { total, week, weekId, assists, wa, prevWeek, prevWeekId, lastKill, class, seen, test }
+---------------------------------------------------------------------------
+
+local function initDB()
+	SmokingGnomesDB = SmokingGnomesDB or {}
+	local db = SmokingGnomesDB
+	if db.schema ~= 2 then
+		-- 0.4.x stored unsigned numbers; only test data existed, so start clean.
+		db.players, db.schema = {}, 2
+	end
+	db.players = db.players or {}
+	db.recent = db.recent or {}
+	db.settings = db.settings or {}
+	if db.settings.toast == nil then
+		db.settings.toast = true
+	end
+	SG.db = db
+end
+
+function SG.rollWeek(e)
+	local cur = SG.weekId()
+	if e.weekId ~= cur then
+		if e.weekId == cur - 7 then
+			e.prevWeek, e.prevWeekId = e.week or 0, e.weekId
+		end
+		e.week, e.wa, e.weekId = 0, 0, cur
+	end
+end
+
+-- Weekly numbers for any entry, without mutating someone else's data.
+function SG.weekCounts(e, cur)
+	if e.weekId == cur then
+		return e.week or 0, e.wa or 0
+	end
+	return 0, 0
+end
+
+function SG.lastWeekCount(e, cur)
+	local lw = cur - 7
+	if e.weekId == lw then
+		return e.week or 0
+	elseif e.prevWeekId == lw then
+		return e.prevWeek or 0
+	end
+	return 0
+end
+
+---------------------------------------------------------------------------
+-- Signed entries.
+-- Each player's numbers live in one canonical string (`raw`) plus a signature over
+-- name + raw. The numbers shown are always parsed from `raw`, so editing them in the
+-- SavedVariables file does nothing, and editing `raw` breaks the signature. The same
+-- raw + sig travels over sync, so relayed numbers can't be altered on the way.
+-- This stops casual tampering (file edits, pasted /run scripts). It can't stop someone
+-- who reads this code; peers' plausibility checks in Sync.lua limit what they can do.
+---------------------------------------------------------------------------
+
+local SALT = "SmokingGnomes|v2|gnomes-first|lok'tar"
+local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim" }
+local NUMERIC = 9 -- the first 9 fields are whole numbers
+SG.FIELD_COUNT = #FIELDS
+
+local function hash(s)
+	local h1, h2 = 5381, 52711
+	for i = 1, #s do
+		local c = s:byte(i)
+		h1 = (h1 * 33 + c) % 4294967296
+		h2 = (h2 * 31 + c * 7 + i) % 4294967296
+	end
+	return tostring(h1) .. "x" .. tostring(h2)
+end
+
+function SG.sign(name, raw)
+	return hash(SALT .. "|" .. name .. "|" .. raw)
+end
+
+function SG.encode(e)
+	local out = {}
+	for i, k in ipairs(FIELDS) do
+		if i <= NUMERIC then
+			out[i] = tostring(math.max(0, math.floor(tonumber(e[k]) or 0)))
+		else
+			out[i] = tostring(e[k] or ""):gsub("|", "")
+		end
+	end
+	return table.concat(out, "|")
+end
+
+-- Returns a fresh entry table when the signature and every field check out, else nil.
+function SG.decode(name, raw, sig)
+	if type(name) ~= "string" or type(raw) ~= "string" or sig ~= SG.sign(name, raw) then
+		return nil
+	end
+	local parts = { strsplit("|", raw) }
+	if #parts ~= #FIELDS then
+		return nil
+	end
+	local e = { raw = raw, sig = sig }
+	for i, k in ipairs(FIELDS) do
+		if i <= NUMERIC then
+			local n = tonumber(parts[i])
+			if not n or n < 0 or n ~= math.floor(n) then
+				return nil
+			end
+			e[k] = n
+		else
+			e[k] = parts[i] ~= "" and parts[i] or nil
+		end
+	end
+	return e
+end
+
+-- Re-sign my own entry after any change.
+function SG.seal(e)
+	local raw = SG.encode(e)
+	if raw ~= e.raw then
+		e.raw, e.sig = raw, SG.sign(SG.myName, raw)
+	end
+end
+
+local function blankEntry()
+	return { total = 0, week = 0, wa = 0, assists = 0, weekId = SG.weekId(), u = 0 }
+end
+
+-- Rebuild every stored entry from its signed string; drop anything that fails.
+local function verifyStore()
+	local players = SG.db.players
+	for name, stored in pairs(players) do
+		local e = SG.decode(name, stored.raw, stored.sig)
+		if e then
+			e.seen, e.bad = stored.seen, stored.bad
+			players[name] = e
+		elseif name == SG.myName then
+			players[name] = blankEntry()
+			SG.recovering = true
+		else
+			players[name] = nil
+		end
+	end
+end
+
+function SG.me()
+	local players = SG.db.players
+	local e = players[SG.myName]
+	if not e then
+		e = blankEntry()
+		players[SG.myName] = e
+	end
+	SG.rollWeek(e)
+	e.class = SG.myClass or e.class
+	e.seen = SG.now()
+	SG.seal(e)
+	return e
+end
+
+-- The guild holds a copy of my numbers. Used after a reinstall, a new PC or a broken
+-- file (SG.freshStart: my entry started blank this session and hasn't been sent yet),
+-- or when playing the same character from two PCs.
+function SG.adoptOwn(remote)
+	local e = SG.db.players[SG.myName]
+	SG.rollWeek(remote)
+	if SG.freshStart and e then
+		-- Keep any kills made since login on top of the guild's copy.
+		remote.total = remote.total + (e.total or 0)
+		remote.assists = remote.assists + (e.assists or 0)
+		if remote.weekId == e.weekId then
+			remote.week = remote.week + (e.week or 0)
+			remote.wa = remote.wa + (e.wa or 0)
+		end
+		if (e.lastKill or 0) > (remote.lastKill or 0) then
+			remote.lastKill, remote.lastVictim = e.lastKill, e.lastVictim
+		end
+		remote.u = math.max(remote.u or 0, e.u or 0)
+		SG.freshStart = false
+	elseif e and (remote.u or 0) <= (e.u or 0) then
+		return false
+	end
+	remote.seen = SG.now()
+	SG.db.players[SG.myName] = remote
+	SG.me()
+	if SG.recovering then
+		SG.print("Restored your numbers from the guild.")
+		SG.recovering = false
+	end
+	return true
+end
+
+-- Test kills never touch your numbers; their rows vanish on the next reload.
+local function clearTestKills()
+	local list = SG.db.recent[SG.myName]
+	if list then
+		for i = #list, 1, -1 do
+			if list[i].test then
+				table.remove(list, i)
+			end
+		end
+	end
+end
+
+local function prune()
+	local cutoff = SG.now() - PRUNE_DAYS * 86400
+	for name, e in pairs(SG.db.players) do
+		if name ~= SG.myName and (e.seen or 0) < cutoff and (e.total or 0) == 0 then
+			SG.db.players[name] = nil
+		end
+	end
+end
+
+function SG.recordKill(info)
+	local e = SG.me()
+	local t = SG.now()
+	if info.test then
+		-- shown in the popup and My kills only
+	elseif info.assist then
+		e.assists = (e.assists or 0) + 1
+		e.wa = (e.wa or 0) + 1
+		e.u = t
+	else
+		local before = SG.jobTitle(SG.myName, e.total)
+		local after = SG.jobTitle(SG.myName, (e.total or 0) + 1)
+		if after ~= before then
+			info.promoted = after
+		end
+		e.total = (e.total or 0) + 1
+		e.week = (e.week or 0) + 1
+		e.lastKill = t
+		e.lastVictim = info.victim
+		e.u = t
+	end
+	SG.seal(e)
+
+	local list = SG.db.recent[SG.myName] or {}
+	SG.db.recent[SG.myName] = list
+	table.insert(list, 1, { name = info.victim, realm = info.realm, zone = info.zone, t = t, assist = info.assist or nil, test = info.test or nil })
+	while #list > RECENT_MAX do
+		table.remove(list)
+	end
+
+	if not info.test and not info.assist then
+		ns.Ledger.Record(info.victim, info.realm, info.zone)
+	end
+	ns.UI.Toast(e, info)
+	ns.UI.Refresh()
+	if not info.test then
+		ns.Sync.Queue()
+	end
+end
+
+---------------------------------------------------------------------------
+-- Kill detection: PARTY_KILL(attackerGUID, targetGUID)
+---------------------------------------------------------------------------
+
+local GROUP_UNITS = {}
+for i = 1, 4 do
+	GROUP_UNITS[#GROUP_UNITS + 1] = "party" .. i
+	GROUP_UNITS[#GROUP_UNITS + 1] = "partypet" .. i
+end
+for i = 1, 40 do
+	GROUP_UNITS[#GROUP_UNITS + 1] = "raid" .. i
+	GROUP_UNITS[#GROUP_UNITS + 1] = "raidpet" .. i
+end
+
+local recentTargets = {}
+local pending = {}
+
+local function guidOf(unit)
+	local ok, g = call(UnitGUID, unit)
+	return ok and str(g) or nil
+end
+
+local function attackerKind(attacker)
+	SG.myGUID = SG.myGUID or guidOf("player")
+	if attacker == SG.myGUID then
+		return "me"
+	end
+	if attacker == guidOf("pet") then
+		return "pet"
+	end
+	local ok, grouped = call(IsInGroup)
+	if not (ok and grouped == true) then
+		return nil
+	end
+	for _, unit in ipairs(GROUP_UNITS) do
+		if guidOf(unit) == attacker then
+			return "group"
+		end
+	end
+	return nil
+end
+
+-- World PvP only: skip battlegrounds and arenas.
+local function inWorld()
+	local ok, _, kind = call(IsInInstance)
+	kind = ok and str(kind)
+	return not (kind == "pvp" or kind == "arena")
+end
+
+local function zoneName()
+	local ok, z = call(GetZoneText)
+	return ok and str(z) or nil
+end
+
+-- Returns true when resolved (gnome or not), false when the race is still unreadable.
+local function resolve(p)
+	local ok, _, _, _, race, _, name, realm = call(GetPlayerInfoByGUID, p.target)
+	race = ok and str(race)
+	if not race then
+		return false
+	end
+	name = str(name)
+	if race == "Gnome" then
+		SG.recordKill({ victim = name, realm = str(realm), zone = p.zone, assist = p.kind == "group" })
+	end
+	-- Recall Notices can name any player, gnome or not.
+	ns.Bounty.OnKill(p.target, name, str(realm), p.zone, p.kind)
+	return true
+end
+
+local function resolvePending()
+	if #pending == 0 then
+		return
+	end
+	local t = SG.now()
+	for i = #pending, 1, -1 do
+		local p = pending[i]
+		if resolve(p) or t - p.t > PENDING_TTL then
+			table.remove(pending, i)
+		end
+	end
+end
+
+local function onPartyKill(attacker, target)
+	if SG.secret(attacker) or SG.secret(target) then
+		return
+	end
+	attacker, target = str(attacker), str(target)
+	if not attacker or not target or not target:match("^Player%-") then
+		return
+	end
+	local t = SG.now()
+	if recentTargets[target] and t - recentTargets[target] < DEDUPE_SECONDS then
+		return
+	end
+	local kind = attackerKind(attacker)
+	if not kind or not inWorld() then
+		return
+	end
+	recentTargets[target] = t
+	local p = { target = target, kind = kind, zone = zoneName(), t = t }
+	if not resolve(p) then
+		pending[#pending + 1] = p
+	end
+end
+
+---------------------------------------------------------------------------
+-- Slash command
+---------------------------------------------------------------------------
+
+function SG.ranked(mode)
+	local cur = SG.weekId()
+	local rows = {}
+	for name, e in pairs(SG.db.players) do
+		local kills, assists
+		if mode == "week" then
+			kills, assists = SG.weekCounts(e, cur)
+		else
+			kills, assists = e.total or 0, e.assists or 0
+		end
+		if kills > 0 or assists > 0 or name == SG.myName then
+			rows[#rows + 1] = { name = name, kills = kills, assists = assists, e = e }
+		end
+	end
+	table.sort(rows, function(a, b)
+		if a.kills ~= b.kills then
+			return a.kills > b.kills
+		end
+		if a.assists ~= b.assists then
+			return a.assists > b.assists
+		end
+		return a.name < b.name
+	end)
+	return rows
+end
+
+function SG.lastWeekWinner()
+	local cur, best, bestN = SG.weekId(), nil, 0
+	for name, e in pairs(SG.db.players) do
+		local n = SG.lastWeekCount(e, cur)
+		if n > bestN or (n == bestN and n > 0 and best and name < best) then
+			best, bestN = name, n
+		end
+	end
+	return best, bestN
+end
+
+---------------------------------------------------------------------------
+-- Job titles (by lifetime gnomes). CEO belongs to the guild master and can't be earned.
+---------------------------------------------------------------------------
+
+SG.TITLES = {
+	{ 0, "Unpaid Intern" },
+	{ 1, "Lab Assistant" },
+	{ 10, "Field Harvester" },
+	{ 25, "Pharmacist" },
+	{ 50, "Senior Chemist" },
+	{ 100, "Head of R&D" },
+	{ 250, "Chief Medical Officer" },
+}
+
+-- Returns title, next title (or nil), gnomes still needed for it.
+function SG.jobTitle(name, total)
+	if name and name == SG.guildMaster then
+		return "CEO"
+	end
+	total = total or 0
+	local title, nextTitle, need = SG.TITLES[1][2], nil, nil
+	for i, t in ipairs(SG.TITLES) do
+		if total >= t[1] then
+			title = t[2]
+			local n = SG.TITLES[i + 1]
+			nextTitle, need = n and n[2], n and (n[1] - total)
+		end
+	end
+	return title, nextTitle, need
+end
+
+-- Last week's winner is this week's Employee of the Week.
+function SG.isEmployeeOfWeek(name)
+	local winner = SG.lastWeekWinner()
+	return winner ~= nil and winner == name
+end
+
+-- Guild roster: rank index per member (0 = guild master). Used for CEO and officer checks.
+local function scanRoster()
+	local ok, n = call(GetNumGuildMembers)
+	n = ok and num(n)
+	if not n or n == 0 then
+		return
+	end
+	local roster = {}
+	for i = 1, n do
+		local ok2, name, _, rankIndex = call(GetGuildRosterInfo, i)
+		local full = ok2 and SG.fullName(name)
+		rankIndex = ok2 and num(rankIndex)
+		if full and rankIndex then
+			roster[full] = rankIndex
+			if rankIndex == 0 then
+				SG.guildMaster = full
+			end
+		end
+	end
+	SG.roster = roster
+	ns.Bounty.OnRoster()
+end
+
+local function printBoard()
+	local rows = SG.ranked("week")
+	SG.print("Weekly yield:")
+	local shown = 0
+	for i, r in ipairs(rows) do
+		if i > 10 or r.kills == 0 then
+			break
+		end
+		print(("  %d. %s  %d"):format(i, SG.shortName(r.name), r.kills))
+		shown = shown + 1
+	end
+	if shown == 0 then
+		print("  No gnomes yet this week.")
+	end
+end
+
+local HELP = {
+	"/gnomes  open the Production Report",
+	"/gnomes stats  your job title and numbers",
+	"/gnomes board  this week's top 10 in chat",
+	"/gnomes recalls  list open Recall Notices",
+	"/gnomes recall <name> [reward]  officers: post a Recall Notice (or target the player)",
+	"/gnomes recall cancel <name>  officers: cancel your notice",
+	"/gnomes toast  turn the kill popup on or off",
+	"/gnomes crest  show the guild crest large, with its colours (for screenshots)",
+	"/gnomes crest off | on  use the logo file instead of the live crest, or switch back",
+	"/gnomes version  your version, and whether a newer one is out",
+	"/gnomes sync  ask the guild for fresh numbers",
+	"/gnomes test  show a fake kill (doesn't change your numbers)",
+	"/gnomes test promo  show a fake promotion",
+	"/gnomes check  self-test the anti-tamper signing",
+}
+
+SLASH_SMOKINGGNOMES1 = "/gnomes"
+SLASH_SMOKINGGNOMES2 = "/sg"
+SlashCmdList.SMOKINGGNOMES = function(msg)
+	local cmd = (msg or ""):lower():match("^%s*(%S*)")
+	if cmd == "" then
+		ns.UI.Toggle()
+	elseif cmd == "stats" then
+		local e = SG.me()
+		local title, nextTitle, need = SG.jobTitle(SG.myName, e.total)
+		SG.print(("%s. %d this week, %d lifetime, %d assists. Last harvest %s."):format(title, e.week, e.total, e.assists or 0, SG.ago(e.lastKill)))
+		if nextTitle then
+			SG.print(("%d more gnome%s to %s."):format(need, need == 1 and "" or "s", nextTitle))
+		end
+	elseif cmd == "board" then
+		printBoard()
+	elseif cmd == "toast" then
+		SG.db.settings.toast = not SG.db.settings.toast
+		SG.print("Kill popup " .. (SG.db.settings.toast and "on." or "off."))
+	elseif cmd == "crest" then
+		local arg = (msg or ""):lower():match("^%s*%S+%s+(%S+)")
+		if arg == "off" or arg == "on" then
+			SG.db.settings.crest = arg == "on"
+			ns.UI.RefreshCrests()
+			SG.print(arg == "off" and "Using the logo file instead of the live guild crest."
+				or "Using the live guild crest (falls back to the logo file if the game doesn't provide it).")
+		else
+			ns.UI.ShowCrestSheet()
+		end
+	elseif cmd == "version" then
+		SG.print(("You have %s.%s"):format(SG.RELEASE,
+			SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) and (" " .. SG.latestRelease .. " is out.") or ""))
+	elseif cmd == "sync" then
+		ns.Sync.Hello()
+		SG.print("Asked the guild for numbers.")
+	elseif cmd == "recall" then
+		-- /gnomes recall <name> [reward]   /gnomes recall cancel <name>   (name defaults to your target)
+		local rest = (msg or ""):match("^%s*%S+%s*(.*)$") or ""
+		local cancel = rest:lower():match("^cancel%s") ~= nil or rest:lower() == "cancel"
+		if cancel then
+			rest = rest:gsub("^%S+%s*", "")
+		end
+		local name, reward = rest:match("^(%S+)%s*(.*)$")
+		if not name then
+			local okT, isPlayer = call(UnitIsPlayer, "target")
+			if okT and not SG.secret(isPlayer) and isPlayer == true then
+				local okN, tName, tRealm = call(UnitName, "target")
+				name = okN and str(tName)
+				if name and str(tRealm) then
+					name = name .. "-" .. str(tRealm)
+				end
+			end
+		end
+		if not name then
+			SG.print("Usage: /gnomes recall <name> [reward], or target the player first.")
+			return
+		end
+		local ok, err
+		if cancel then
+			ok, err = ns.Bounty.Cancel(name)
+		else
+			ok, err = ns.Bounty.Post(name, reward)
+		end
+		if not ok then
+			SG.print(err)
+		elseif cancel then
+			SG.print("Recall Notice cancelled.")
+		end
+	elseif cmd == "recalls" then
+		local list = ns.Bounty.List()
+		local shown = 0
+		for _, row in ipairs(list) do
+			if row.state == "open" then
+				print(("  %s  ·  %s  ·  posted by %s"):format(row.b.target, row.b.reward, SG.shortName(row.b.poster)))
+				shown = shown + 1
+			end
+		end
+		SG.print(shown == 0 and "No open Recall Notices." or (shown .. " open Recall Notice(s)."))
+	elseif cmd == "check" then
+		-- Self-test of the signing: a round trip must pass, any edit must fail.
+		local sample = { total = 12, week = 3, weekId = SG.weekId(), assists = 4, wa = 1, lastKill = SG.now(), u = SG.now(), class = "PRIEST", lastVictim = "Fizzwick" }
+		local raw = SG.encode(sample)
+		local sig = SG.sign(SG.myName, raw)
+		local roundTrip = SG.decode(SG.myName, raw, sig)
+		local edited = SG.decode(SG.myName, raw:gsub("^12|", "99|"), sig)
+		local otherName = SG.decode("Someone-Else", raw, sig)
+		local own = SG.db.players[SG.myName]
+		local ownOk = own and SG.decode(SG.myName, own.raw, own.sig) ~= nil
+		local recallsOk = ns.Bounty.SelfTest()
+		local pass = roundTrip and roundTrip.total == 12 and roundTrip.lastVictim == "Fizzwick" and not edited and not otherName and ownOk and recallsOk
+		SG.print(pass and "Check passed: signing works and your saved numbers are intact."
+			or ("Check FAILED (roundtrip=%s edited=%s othername=%s own=%s recalls=%s)"):format(tostring(roundTrip ~= nil), tostring(edited ~= nil), tostring(otherName ~= nil), tostring(ownOk), tostring(recallsOk)))
+		local officer = SG.IsOfficer(SG.myName)
+		SG.print("Recall Notices: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " post them.")
+	elseif cmd == "test" then
+		local info = { victim = "Test Gnome", zone = zoneName(), test = true }
+		if (msg or ""):lower():find("promo", 1, true) then
+			local _, nextTitle = SG.jobTitle(SG.myName, SG.me().total)
+			info.promoted = nextTitle or "Chief Medical Officer"
+		end
+		SG.recordKill(info)
+	else
+		for _, line in ipairs(HELP) do
+			print(line)
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- Events
+---------------------------------------------------------------------------
+
+local f = CreateFrame("Frame")
+f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PARTY_KILL")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
+f:RegisterEvent("CHAT_MSG_ADDON")
+f:RegisterEvent("GUILD_ROSTER_UPDATE")
+pcall(f.RegisterEvent, f, "ADDON_RESTRICTION_STATE_CHANGED")
+
+f:SetScript("OnEvent", function(_, event, ...)
+	if event == "ADDON_LOADED" then
+		if ... == ADDON then
+			initDB()
+		end
+	elseif event == "PLAYER_LOGIN" then
+		SG.myName = SG.fullName(UnitName("player"))
+		SG.myGUID = guidOf("player")
+		local _, classFile = UnitClass("player")
+		SG.myClass = str(classFile)
+		verifyStore()
+		local own = SG.db.players[SG.myName]
+		SG.freshStart = not own or (own.u or 0) == 0
+		clearTestKills()
+		prune()
+		SG.me()
+		SG.prevOnline = SG.db.lastOnline -- tells guildmates which kills I missed
+		SG.db.lastOnline = SG.now()
+		ns.Ledger.Load()
+		ns.Bounty.Load()
+		scanRoster()
+		call(C_GuildInfo and C_GuildInfo.GuildRoster) -- ask for a roster update (CEO and officers)
+		ns.UI.Init()
+		ns.Sync.Start()
+		C_Timer.NewTicker(30, function()
+			SG.db.lastOnline = SG.now()
+			resolvePending()
+			ns.UI.Refresh()
+		end)
+	elseif event == "PARTY_KILL" then
+		if SG.db and SG.myName then
+			onPartyKill(...)
+		end
+	elseif event == "PLAYER_REGEN_ENABLED" or event == "ADDON_RESTRICTION_STATE_CHANGED" then
+		if SG.db and SG.myName then
+			resolvePending()
+		end
+	elseif event == "GUILD_ROSTER_UPDATE" then
+		if SG.db and SG.myName then
+			scanRoster()
+		end
+	elseif event == "CHAT_MSG_ADDON" then
+		if SG.db and SG.myName then
+			ns.Sync.OnMessage(...)
+		end
+	end
+end)
