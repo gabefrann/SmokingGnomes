@@ -288,10 +288,19 @@ local function build()
 	hud:SetMovable(true)
 	hud:EnableMouse(true)
 	hud:RegisterForDrag("LeftButton")
-	hud:SetScript("OnDragStart", hud.StartMoving)
+	-- Moving and sizing are blocked in combat (the panel holds secure buttons).
+	hud:SetScript("OnDragStart", function(self)
+		if not InCombatLockdown() then
+			self.busy = true
+			self:StartMoving()
+		end
+	end)
 	hud:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		savePosition()
+		if self.busy and not InCombatLockdown() then
+			self.busy = false
+			self:StopMovingOrSizing()
+			savePosition()
+		end
 	end)
 	hud:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
 	hud:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
@@ -386,12 +395,14 @@ local function build()
 	grip:SetHighlightTexture(386863)
 	grip:SetScript("OnMouseDown", function(_, button)
 		if button == "LeftButton" and not InCombatLockdown() then
+			hud.busy = true
 			hud:StartSizing("BOTTOMRIGHT")
 		end
 	end)
 	grip:SetScript("OnMouseUp", function()
-		hud:StopMovingOrSizing()
-		if not InCombatLockdown() then
+		if hud.busy and not InCombatLockdown() then
+			hud.busy = false
+			hud:StopMovingOrSizing()
 			SG.db.settings.gankSize = { math.floor(hud:GetWidth() + 0.5), math.floor(hud:GetHeight() + 0.5) }
 			savePosition() -- sizing can re-anchor the panel
 			Gank.Refresh()
@@ -528,7 +539,18 @@ function Gank.Init()
 	f:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 	f:RegisterEvent("PLAYER_TARGET_CHANGED")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
+	f:RegisterEvent("PLAYER_REGEN_DISABLED")
 	f:SetScript("OnEvent", function(_, event, unit)
+		if event == "PLAYER_REGEN_DISABLED" then
+			-- Combat is starting: let go of a drag or resize while that's still allowed.
+			if hud and hud.busy then
+				hud.busy = false
+				pcall(hud.StopMovingOrSizing, hud)
+				SG.db.settings.gankSize = { math.floor(hud:GetWidth() + 0.5), math.floor(hud:GetHeight() + 0.5) }
+				savePosition()
+			end
+			return
+		end
 		if event == "NAME_PLATE_UNIT_ADDED" then
 			if SG.str(unit) then
 				check(unit)
