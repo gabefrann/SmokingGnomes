@@ -135,8 +135,19 @@ function SG.fullName(name)
 	return name ~= "" and name or nil
 end
 
--- A unit's full name. On Forever, UnitName's second value is the surname.
+-- A unit's full name ("Lih Zaddi"). GetPlayerInfoByGUID gives first name and surname
+-- together (proven by the kill log); UnitName may give the first name only, with the
+-- surname as its second value on some builds, so it's the fallback.
 function SG.unitFullName(unit)
+	local okG, guid = call(UnitGUID, unit)
+	guid = okG and str(guid)
+	if guid and guid:match("^Player%-") then
+		local okI, _, _, _, _, _, name = call(GetPlayerInfoByGUID, guid)
+		name = okI and SG.fullName(name)
+		if name then
+			return name
+		end
+	end
 	local ok, first, surname = call(UnitName, unit)
 	first = ok and str(first)
 	if not first then
@@ -905,6 +916,11 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "status" then
 		local d = SG.diag
 		SG.print(("Version %s. You are %s."):format(SG.RELEASE, tostring(SG.myName)))
+		-- Where the name comes from, in case a surname goes missing.
+		local okN, n1, n2 = call(UnitName, "player")
+		local okI, _, _, _, _, _, gName = call(GetPlayerInfoByGUID, SG.myGUID or "")
+		print(("  Name sources: UnitName = %s / %s, by GUID = %s"):format(
+			tostring(okN and str(n1)), tostring(okN and str(n2)), tostring(okI and str(gName))))
 		-- Guildmates running the addon, heard from this session.
 		local peers = {}
 		for name in pairs(d.peers) do
