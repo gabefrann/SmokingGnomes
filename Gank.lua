@@ -52,7 +52,7 @@ end
 
 local function text(parent, size, color, justify)
 	local fs = parent:CreateFontString(nil, "OVERLAY")
-	fs:SetFont(FONT, size, "")
+	fs:SetFont(FONT, size, "OUTLINE") -- thin outline keeps text readable over any background
 	fs:SetTextColor(unpack(color or TEXT))
 	fs:SetJustifyH(justify or "LEFT")
 	fs:SetWordWrap(false)

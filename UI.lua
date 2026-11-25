@@ -41,7 +41,7 @@ local champion -- last week's winner, refreshed with the window
 
 local function text(parent, size, color, justify)
 	local fs = parent:CreateFontString(nil, "OVERLAY")
-	fs:SetFont(FONT, size, "")
+	fs:SetFont(FONT, size, "OUTLINE") -- thin outline keeps text readable over any background
 	fs:SetTextColor(unpack(color or TEXT))
 	fs:SetJustifyH(justify or "LEFT")
 	fs:SetWordWrap(false)
@@ -243,7 +243,7 @@ end
 local function layoutRow(r, recall)
 	r.assists:SetWidth(recall and 64 or 56)
 	r.kills:SetWidth(recall and 84 or 50)
-	r.kills:SetFont(FONT, recall and 11 or 12, "")
+	r.kills:SetFont(FONT, recall and 11 or 12, "OUTLINE")
 	r.name:SetWidth(recall and 92 or 150)
 	r.cancelTarget = nil
 end
@@ -274,7 +274,7 @@ local function makeInput(parent, width, placeholder, maxLetters)
 	eb:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
 	eb:SetBackdropColor(1, 1, 1, 0.04)
 	eb:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 0.8)
-	eb:SetFont(FONT, 11, "")
+	eb:SetFont(FONT, 11, "OUTLINE")
 	eb:SetTextColor(unpack(TEXT))
 	eb:SetTextInsets(6, 6, 0, 0)
 	eb:SetAutoFocus(false)
