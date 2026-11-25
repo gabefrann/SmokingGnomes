@@ -34,6 +34,7 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 - **Who it can target:** any player, not just gnomes. Use `Name-Realm` for players from another realm.
 - **Claiming:** the first guildmate to land the killing blow (or whose pet does) in the open world claims it automatically. If two claims arrive, the earlier kill wins. The addon checks that the claimed kill really was the named player whenever it can.
 - **Rewards:** the officer pays these by hand. The addon only records who earned what.
+- **The list:** withdrawn reports disappear straight away, expired ones after a day, and eliminated spies stay on the tab as trophies until the weekly reset.
 - **Expiry:** reports expire after 7 days. The officer who reported a spy can withdraw it with shift + right-click on the Spies tab, or `/gnomes spy cancel Fizzwick`.
 - **What everyone sees:** a popup when a spy is reported or eliminated, a red "Corporate spy" line when hovering them in the world, and "Spies eliminated" in each player's tooltip on the board.
 - Notices and claims are signed and relayed the same way as kill counts, so people who were offline still get them.

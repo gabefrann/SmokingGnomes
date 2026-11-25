@@ -16,7 +16,8 @@ ns.Bounty = Bounty
 
 local OFFICER_RANK = 1          -- guild rank index 0 (guild master) and 1 may post
 local DURATION = 7 * 86400      -- notices stay open for a week
-local SHOW_CLOSED = 3 * 86400   -- closed notices stay on the list this long
+-- Closed reports on the Spies tab: see Bounty.List (withdrawn: hidden; expired: a day;
+-- eliminated: until the weekly reset).
 local KEEP = 30 * 86400         -- then they are deleted
 local RELAY_CLOSED = 14 * 86400 -- closed notices are relayed this long after closing
 local NEWS_WINDOW = 30 * 60     -- only notices/claims this fresh get a popup
@@ -219,16 +220,25 @@ function Bounty.RelayList()
 	return out
 end
 
--- Notices for the Recalls tab: open ones (ending soonest first), then recently closed.
+-- Reports for the Spies tab: open ones (ending soonest first), then eliminated spies.
+-- Withdrawn reports leave the list straight away, expired ones after a day, and
+-- eliminated spies stay up as trophies until the weekly reset.
 function Bounty.List()
 	local bounties = db()
 	local now, open, closed = SG.now(), {}, {}
+	local weekStart = now + SG.secondsUntilReset() - 7 * 86400
 	for _, b in pairs(bounties) do
 		local state, c = Bounty.State(b)
 		local at = closedAt(b, state, c)
+		local show
 		if not at then
 			open[#open + 1] = { b = b, state = state }
-		elseif now - at < SHOW_CLOSED then
+		elseif state == "claimed" then
+			show = at >= weekStart
+		elseif state == "expired" then
+			show = now - at < 86400
+		end -- withdrawn: not shown
+		if show then
 			closed[#closed + 1] = { b = b, state = state, claim = c, at = at }
 		end
 	end
@@ -291,6 +301,9 @@ function Bounty.Post(target, reward)
 	target = SG.fullName(trim(target)) or ""
 	if #target < 2 or #target > 40 then
 		return false, "Enter the player's name, like Fizzwick or Legs Dogman."
+	end
+	if target:find("%d") then
+		return false, "\"" .. target .. "\" looks like a reward, not a name. Use /gnomes spy Name reward, or target the player first."
 	end
 	target = target:gsub("(%S)(%S*)", function(a, b) return a:upper() .. b end)
 	if findOpen(target) then
