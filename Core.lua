@@ -238,18 +238,19 @@ function SG.rollWeek(e)
 	local cur = SG.weekId()
 	if e.weekId ~= cur then
 		if e.weekId == cur - 7 then
-			e.prevWeek, e.prevWeekId = e.week or 0, e.weekId
+			e.prevWeek, e.prevWeekId, e.pp = e.week or 0, e.weekId, e.wp or 0
 		end
-		e.week, e.wa, e.weekId = 0, 0, cur
+		e.week, e.wa, e.wp, e.weekId = 0, 0, 0, cur
 	end
 end
 
 -- Weekly numbers for any entry, without mutating someone else's data.
+-- Returns gnomes, assists and points (points in quarters: 5 = 1.25).
 function SG.weekCounts(e, cur)
 	if e.weekId == cur then
-		return e.week or 0, e.wa or 0
+		return e.week or 0, e.wa or 0, e.wp or 0
 	end
-	return 0, 0
+	return 0, 0, 0
 end
 
 function SG.lastWeekCount(e, cur)
@@ -260,6 +261,59 @@ function SG.lastWeekCount(e, cur)
 		return e.prevWeek or 0
 	end
 	return 0
+end
+
+-- Last week's points, in quarters.
+function SG.lastWeekPoints(e, cur)
+	local lw = cur - 7
+	if e.weekId == lw then
+		return e.wp or 0
+	elseif e.prevWeekId == lw then
+		return e.pp or 0
+	end
+	return 0
+end
+
+---------------------------------------------------------------------------
+-- Points. A gnome kill scores by the gnome's level against yours, so a fair fight is
+-- worth the same at level 20 as at 60, and camping low levels is worth little.
+-- Stored in quarters so the signed numbers stay whole: 5 = 1.25 points.
+---------------------------------------------------------------------------
+
+SG.POINTS_START = 1795631000 -- 25 Nov 2026, when points arrived: earlier kills count 1 point each
+
+SG.POINTS = {
+	{ 0, 5, "your level or higher" }, -- gnome is at most 0 levels below you: 1.25
+	{ 5, 4, "1-5 levels below" },     -- 1
+	{ 10, 2, "6-10 levels below" },   -- 0.5
+	{ math.huge, 1, "11+ levels below" }, -- 0.25
+}
+
+-- Points (quarters) for killing a gnome of `theirs` level at `mine`. Unknown level: 1 point.
+-- Level -1 means "??": far above you.
+function SG.killPoints(mine, theirs)
+	if not mine or not theirs or mine <= 0 then
+		return 4
+	end
+	if theirs < 0 then
+		return 5
+	end
+	local below = mine - theirs
+	for _, p in ipairs(SG.POINTS) do
+		if below <= p[1] then
+			return p[2]
+		end
+	end
+	return 1
+end
+
+-- 5 -> "1.25", 4 -> "1", 2 -> "0.5"
+function SG.points(q)
+	q = q or 0
+	if q % 4 == 0 then
+		return tostring(q / 4)
+	end
+	return (("%.2f"):format(q / 4):gsub("0$", ""))
 end
 
 ---------------------------------------------------------------------------
@@ -273,9 +327,13 @@ end
 ---------------------------------------------------------------------------
 
 local SALT = "SmokingGnomes|v2|gnomes-first|lok'tar"
-local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim" }
-local NUMERIC = 9 -- the first 9 fields are whole numbers
+-- wp / pp: this week's and last week's points, in quarters (added in 0.16; entries from
+-- older versions have 11 fields and count each gnome as 1 point).
+local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim", "wp", "pp" }
+local TEXT_FIELDS = { class = true, lastVictim = true } -- everything else is a whole number
+local OLD_FIELD_COUNT = 11
 SG.FIELD_COUNT = #FIELDS
+SG.OLD_FIELD_COUNT = OLD_FIELD_COUNT
 
 local function hash(s)
 	local h1, h2 = 5381, 52711
@@ -294,10 +352,10 @@ end
 function SG.encode(e)
 	local out = {}
 	for i, k in ipairs(FIELDS) do
-		if i <= NUMERIC then
-			out[i] = tostring(math.max(0, math.floor(tonumber(e[k]) or 0)))
-		else
+		if TEXT_FIELDS[k] then
 			out[i] = tostring(e[k] or ""):gsub("|", "")
+		else
+			out[i] = tostring(math.max(0, math.floor(tonumber(e[k]) or 0)))
 		end
 	end
 	return table.concat(out, "|")
@@ -309,20 +367,25 @@ function SG.decode(name, raw, sig)
 		return nil
 	end
 	local parts = { strsplit("|", raw) }
-	if #parts ~= #FIELDS then
+	if #parts ~= #FIELDS and #parts ~= OLD_FIELD_COUNT then
 		return nil
 	end
 	local e = { raw = raw, sig = sig }
-	for i, k in ipairs(FIELDS) do
-		if i <= NUMERIC then
+	for i = 1, #parts do
+		local k = FIELDS[i]
+		if TEXT_FIELDS[k] then
+			e[k] = parts[i] ~= "" and parts[i] or nil
+		else
 			local n = tonumber(parts[i])
 			if not n or n < 0 or n ~= math.floor(n) then
 				return nil
 			end
 			e[k] = n
-		else
-			e[k] = parts[i] ~= "" and parts[i] or nil
 		end
+	end
+	if #parts == OLD_FIELD_COUNT then
+		-- From a version before points: each gnome counts as 1 point.
+		e.wp, e.pp = e.week * 4, e.prevWeek * 4
 	end
 	return e
 end
@@ -383,6 +446,7 @@ function SG.adoptOwn(remote)
 		if remote.weekId == e.weekId then
 			remote.week = remote.week + (e.week or 0)
 			remote.wa = remote.wa + (e.wa or 0)
+			remote.wp = (remote.wp or 0) + (e.wp or 0)
 		end
 		if (e.lastKill or 0) > (remote.lastKill or 0) then
 			remote.lastKill, remote.lastVictim = e.lastKill, e.lastVictim
@@ -426,12 +490,14 @@ function SG.mergeLegacy(old)
 	if old.weekId == e.weekId then
 		up("week", old.week)
 		up("wa", old.wa)
+		up("wp", old.wp)
 	end
 	if old.prevWeekId and old.prevWeekId == e.weekId - 7 then
 		if e.prevWeekId ~= old.prevWeekId then
-			e.prevWeek, e.prevWeekId = 0, old.prevWeekId
+			e.prevWeek, e.prevWeekId, e.pp = 0, old.prevWeekId, 0
 		end
 		up("prevWeek", old.prevWeek)
+		up("pp", old.pp)
 	end
 	if (old.lastKill or 0) > (e.lastKill or 0) then
 		e.lastKill, e.lastVictim = old.lastKill, old.lastVictim
@@ -448,12 +514,15 @@ end
 function SG.recountOwn()
 	local first = SG.myFirstName()
 	local weekStart = SG.now() + secondsUntilReset() - 7 * 86400
-	local c = { total = 0, week = 0, assists = 0, wa = 0, weekId = SG.weekId(), lastKill = 0 }
+	local c = { total = 0, week = 0, assists = 0, wa = 0, wp = 0, weekId = SG.weekId(), lastKill = 0 }
 	for _, k in pairs(SG.db.kills or {}) do
 		if k.killer == SG.myName or (first and k.killer == first) then
 			c.total = c.total + 1
 			if k.t >= weekStart then
 				c.week = c.week + 1
+				-- The ledger has no levels: count the least a kill can score (0.25), or a
+				-- full point for kills made before points existed.
+				c.wp = c.wp + (k.t < SG.POINTS_START and 4 or 1)
 			end
 			if k.t > c.lastKill then
 				c.lastKill, c.lastVictim = k.t, k.victim
@@ -504,6 +573,8 @@ function SG.recordKill(info)
 		end
 		e.total = (e.total or 0) + 1
 		e.week = (e.week or 0) + 1
+		info.points = info.points or 4
+		e.wp = (e.wp or 0) + info.points
 		e.lastKill = t
 		e.lastVictim = info.victim
 		e.u = t
@@ -512,7 +583,8 @@ function SG.recordKill(info)
 
 	local list = SG.db.recent[SG.myName] or {}
 	SG.db.recent[SG.myName] = list
-	table.insert(list, 1, { name = info.victim, realm = info.realm, zone = info.zone, t = t, assist = info.assist or nil, test = info.test or nil })
+	table.insert(list, 1, { name = info.victim, realm = info.realm, zone = info.zone, t = t, assist = info.assist or nil, test = info.test or nil,
+		pts = not info.assist and info.points or nil, lvl = info.level, myLvl = info.myLevel })
 	while #list > RECENT_MAX do
 		table.remove(list)
 	end
@@ -562,6 +634,69 @@ local function guidOf(unit)
 	return ok and str(g) or nil
 end
 
+-- Enemy player levels seen recently (guid -> { level, t }), so a kill can be scored even
+-- when the dead player is no longer on a nameplate or targeted.
+local levels = {}
+local LEVEL_MEMORY = 600
+
+local function noteLevel(unit)
+	local guid = guidOf(unit)
+	if not guid or not guid:match("^Player%-") then
+		return
+	end
+	local okE, enemy = call(UnitIsEnemy, "player", unit)
+	if not okE or SG.secret(enemy) or enemy ~= true then
+		return
+	end
+	local okL, level = call(UnitLevel, unit)
+	level = okL and num(level)
+	if level and level ~= 0 then
+		local now = SG.now()
+		if not levels[guid] then
+			levels.n = (levels.n or 0) + 1
+			if levels.n > 300 then -- forget players not seen for a while
+				levels.n = 0
+				for g, v in pairs(levels) do
+					if g ~= "n" and now - v.t > LEVEL_MEMORY then
+						levels[g] = nil
+					end
+				end
+			end
+		end
+		levels[guid] = { level = level, t = now }
+	end
+end
+SG.noteLevel = noteLevel
+
+-- The level of a player by GUID: from a unit showing them right now, else from memory.
+local function levelOf(guid)
+	local units = { "target", "mouseover", "focus" }
+	local okT, token = call(UnitTokenFromGUID, guid)
+	token = okT and str(token)
+	if token then
+		table.insert(units, 1, token)
+	end
+	for _, unit in ipairs(units) do
+		if guidOf(unit) == guid then
+			local okL, level = call(UnitLevel, unit)
+			level = okL and num(level)
+			if level and level ~= 0 then
+				return level
+			end
+		end
+	end
+	local seen = levels[guid]
+	if seen and SG.now() - seen.t < LEVEL_MEMORY then
+		return seen.level
+	end
+	return nil
+end
+
+local function myLevel()
+	local ok, level = call(UnitLevel, "player")
+	return ok and num(level) or nil
+end
+
 local function attackerKind(attacker)
 	SG.myGUID = SG.myGUID or guidOf("player")
 	if attacker == SG.myGUID then
@@ -607,7 +742,13 @@ local function resolve(p)
 		SG.diag.last = { t = SG.now(), name = name or "?", race = race, counted = race == "Gnome" }
 	end
 	if race == "Gnome" then
-		SG.recordKill({ victim = name, realm = str(realm), zone = p.zone, assist = p.kind == "group" })
+		local info = { victim = name, realm = str(realm), zone = p.zone, assist = p.kind == "group" }
+		if not info.assist then
+			info.level, info.myLevel = p.level, p.myLevel
+			info.points = SG.killPoints(p.myLevel, p.level)
+			logKill("points: %s (level %s vs your %s)", SG.points(info.points), tostring(p.level or "?"), tostring(p.myLevel or "?"))
+		end
+		SG.recordKill(info)
 	end
 	-- Recall Notices can name any player, gnome or not.
 	ns.Bounty.OnKill(p.target, name, str(realm), p.zone, p.kind)
@@ -650,7 +791,7 @@ local function onPartyKill(attacker, target)
 		SG.diag.mine = SG.diag.mine + 1
 	end
 	recentTargets[target] = t
-	local p = { target = target, kind = kind, zone = zoneName(), t = t }
+	local p = { target = target, kind = kind, zone = zoneName(), t = t, level = levelOf(target), myLevel = myLevel() }
 	if not resolve(p) then
 		pending[#pending + 1] = p
 	end
@@ -774,21 +915,25 @@ end
 -- Slash command
 ---------------------------------------------------------------------------
 
+-- Weekly: by points, then gnomes, then assists. Lifetime: by gnomes, then assists.
 function SG.ranked(mode)
 	local cur = SG.weekId()
 	local rows = {}
 	for name, e in pairs(SG.db.players) do
-		local kills, assists
+		local kills, assists, points
 		if mode == "week" then
-			kills, assists = SG.weekCounts(e, cur)
+			kills, assists, points = SG.weekCounts(e, cur)
 		else
-			kills, assists = e.total or 0, e.assists or 0
+			kills, assists, points = e.total or 0, e.assists or 0, 0
 		end
 		if kills > 0 or assists > 0 or name == SG.myName then
-			rows[#rows + 1] = { name = name, kills = kills, assists = assists, e = e }
+			rows[#rows + 1] = { name = name, kills = kills, assists = assists, points = points, e = e }
 		end
 	end
 	table.sort(rows, function(a, b)
+		if a.points ~= b.points then
+			return a.points > b.points
+		end
 		if a.kills ~= b.kills then
 			return a.kills > b.kills
 		end
@@ -800,15 +945,16 @@ function SG.ranked(mode)
 	return rows
 end
 
+-- Most points last week (gnomes break a tie). Returns the name and their points as text.
 function SG.lastWeekWinner()
-	local cur, best, bestN = SG.weekId(), nil, 0
+	local cur, best, bestP, bestN = SG.weekId(), nil, 0, 0
 	for name, e in pairs(SG.db.players) do
-		local n = SG.lastWeekCount(e, cur)
-		if n > bestN or (n == bestN and n > 0 and best and name < best) then
-			best, bestN = name, n
+		local p, n = SG.lastWeekPoints(e, cur), SG.lastWeekCount(e, cur)
+		if p > bestP or (p == bestP and p > 0 and (n > bestN or (n == bestN and best and name < best))) then
+			best, bestP, bestN = name, p, n
 		end
 	end
-	return best, bestN
+	return best, SG.points(bestP)
 end
 
 ---------------------------------------------------------------------------
@@ -881,36 +1027,36 @@ function SG.loginStandings()
 	local top, myRank, mine = {}, nil, nil
 	for i, r in ipairs(rows) do
 		if r.kills > 0 and #top < 3 then
-			top[#top + 1] = ("%d. %s %d"):format(i, SG.shortName(r.name), r.kills)
+			top[#top + 1] = ("%d. %s %s"):format(i, SG.shortName(r.name), SG.points(r.points))
 		end
 		if r.name == SG.myName then
-			myRank, mine = i, r.kills
+			myRank, mine = i, r
 		end
 	end
 	local gold = "|cffffd14d"
 	if #top == 0 then
 		SG.print("No gnomes harvested yet this week. First one sets the pace.")
 	else
-		SG.print("This week's top harvesters: " .. gold .. table.concat(top, "  ·  ") .. "|r")
-		if myRank and myRank > 3 and mine > 0 then
-			print(("  You: #%d with %d."):format(myRank, mine))
+		SG.print("This week's top harvesters (points): " .. gold .. table.concat(top, "  ·  ") .. "|r")
+		if myRank and myRank > 3 and mine.kills > 0 then
+			print(("  You: #%d with %s points."):format(myRank, SG.points(mine.points)))
 		end
 	end
-	local champ, n = SG.lastWeekWinner()
+	local champ, pts = SG.lastWeekWinner()
 	if champ then
-		print(("  Employee of the Week: %s%s|r (%d last week)"):format(gold, SG.shortName(champ), n))
+		print(("  Employee of the Week: %s%s|r (%s points last week)"):format(gold, SG.shortName(champ), pts))
 	end
 end
 
 local function printBoard()
 	local rows = SG.ranked("week")
-	SG.print("This week:")
+	SG.print("This week (points · gnomes):")
 	local shown = 0
 	for i, r in ipairs(rows) do
 		if i > 10 or r.kills == 0 then
 			break
 		end
-		print(("  %d. %s  %d"):format(i, SG.shortName(r.name), r.kills))
+		print(("  %d. %s  %s · %d"):format(i, SG.shortName(r.name), SG.points(r.points), r.kills))
 		shown = shown + 1
 	end
 	if shown == 0 then
@@ -953,7 +1099,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "stats" then
 		local e = SG.me()
 		local title, nextTitle, need = SG.jobTitle(SG.myName, e.total)
-		SG.print(("%s. %d this week, %d lifetime, %d assists. Last harvest %s."):format(title, e.week, e.total, e.assists or 0, SG.ago(e.lastKill)))
+		SG.print(("%s. %d this week (%s points), %d lifetime, %d assists. Last harvest %s."):format(title, e.week, SG.points(e.wp), e.total, e.assists or 0, SG.ago(e.lastKill)))
 		if nextTitle then
 			SG.print(("%d more gnome%s to %s."):format(need, need == 1 and "" or "s", nextTitle))
 		end
@@ -1114,6 +1260,12 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			info.promoted = nextTitle or "Chief Medical Officer"
 		end
 		SG.recordKill(info)
+	elseif cmd == "points" then
+		SG.print("Weekly points: each gnome you kill scores by its level against yours.")
+		for _, p in ipairs(SG.POINTS) do
+			print(("  Gnome %s: %s"):format(p[3], SG.points(p[2])))
+		end
+		print("  Assists score no points; they break ties. Lifetime and job titles count gnomes.")
 	elseif cmd == "minimap" then
 		ns.UI.ToggleMinimap()
 	elseif cmd == "gank" then

@@ -736,6 +736,14 @@ function Gank.Init()
 			end
 			return
 		end
+		-- Remember enemy levels (gank mode on or off) so kills can be scored by level.
+		if event == "NAME_PLATE_UNIT_ADDED" and SG.str(unit) then
+			SG.noteLevel(unit)
+		elseif event == "UPDATE_MOUSEOVER_UNIT" then
+			SG.noteLevel("mouseover")
+		elseif event == "PLAYER_TARGET_CHANGED" then
+			SG.noteLevel("target")
+		end
 		if event == "NAME_PLATE_UNIT_ADDED" then
 			if SG.str(unit) then
 				check(unit)

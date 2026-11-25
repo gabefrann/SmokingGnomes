@@ -319,7 +319,7 @@ local HELP = {
 	{ "/gnomes", "Open this window" },
 	{ "/gnomes stats", "Your title and numbers" },
 	{ "/gnomes status", "Check it's working" },
-	{ "/gnomes board", "Top 10 in chat" },
+	{ "/gnomes points", "How weekly points work" },
 	{ "/gnomes gank", "Gank mode on or off" },
 	{ "   Molly's target", "A groupmate targeted them" },
 	{ "   Molly · 2m ago", "A guildmate here saw them" },
@@ -758,8 +758,24 @@ local function myCareer(e)
 	return title, nil
 end
 
+-- Weekly ranks by points: the POINTS column replaces HARVESTED, gnomes move to the
+-- second column, and assists go to the row tooltip.
+local function boardRow(r, rank, row, isMe)
+	if mode == "week" then
+		setRow(r, rank, row.name, SG.points(row.points), row.kills, row.e, isMe)
+		r.tip[#r.tip + 1] = ("This week: %d gnome%s, %s points%s"):format(row.kills, row.kills == 1 and "" or "s",
+			SG.points(row.points), row.assists > 0 and (", " .. row.assists .. " assists") or "")
+	else
+		setRow(r, rank, row.name, row.kills, row.assists, row.e, isMe)
+	end
+end
+
 local function refreshBoard()
-	setHeads("EMPLOYEE", "HARVESTED", "ASSISTS", -62)
+	if mode == "week" then
+		setHeads("EMPLOYEE", "POINTS", "GNOMES", -62)
+	else
+		setHeads("EMPLOYEE", "HARVESTED", "ASSISTS", -62)
+	end
 	local list = SG.ranked(mode)
 	local myRank, shown = nil, 0
 	for i, row in ipairs(list) do
@@ -771,7 +787,7 @@ local function refreshBoard()
 	for i = 1, ROWS do
 		local row = list[i]
 		if row and (row.kills > 0 or row.assists > 0) then
-			setRow(rows[i], i, row.name, row.kills, row.assists, row.e, row.name == SG.myName)
+			boardRow(rows[i], i, row, row.name == SG.myName)
 			shown = shown + 1
 		else
 			rows[i]:Hide()
@@ -782,7 +798,7 @@ local function refreshBoard()
 	local me = rows[ROWS + 1]
 	local mine = myRank and list[myRank]
 	if mine and myRank > ROWS and (mine.kills > 0 or mine.assists > 0) then
-		setRow(me, myRank, mine.name, mine.kills, mine.assists, mine.e, true)
+		boardRow(me, myRank, mine, true)
 	else
 		me:Hide()
 	end
@@ -888,6 +904,10 @@ local function refreshMine()
 			r.name:SetAlpha(1)
 			r.tipColor = nil
 			r.tip = { k.name or "Unknown gnome", k.zone or "Unknown zone", SG.ago(k.t) }
+			if k.pts then
+				r.tip[#r.tip + 1] = ("+%s points (level %s vs your %s)"):format(SG.points(k.pts),
+					k.lvl and (k.lvl < 0 and "??" or k.lvl) or "unknown", k.myLvl or "?")
+			end
 			local v = not k.test and ns.Ledger.Victim(k.name, k.realm)
 			if k.assist then
 				r.kills:SetText("assist")
@@ -940,8 +960,8 @@ function UI.Refresh()
 	end
 
 	if champion then
-		local _, n = SG.lastWeekWinner()
-		sub:SetText(("%s Employee of the Week: |cff%s%s|r (%d)"):format(STAR, hex(GOLD), SG.shortName(champion), n))
+		local _, pts = SG.lastWeekWinner()
+		sub:SetText(("%s Employee of the Week: |cff%s%s|r (%s pts)"):format(STAR, hex(GOLD), SG.shortName(champion), pts))
 	else
 		sub:SetText("Production Report")
 	end
@@ -1072,6 +1092,9 @@ function UI.Toast(e, info)
 		main, color, note = "Gnome assist", "white", "Sample sent to the lab."
 	else
 		main, color = "Gnome smoked!", "green"
+		if info.points then
+			parts[#parts + 1] = "+" .. SG.points(info.points) .. " pts"
+		end
 		parts[#parts + 1] = e.week .. " this week"
 		note = LAB_NOTES[math.random(#LAB_NOTES)]
 	end
@@ -1341,7 +1364,7 @@ function SmokingGnomes_OnAddonCompartmentEnter(_, button)
 	local e = SG.me()
 	GameTooltip:SetOwner(button or UIParent, "ANCHOR_LEFT")
 	GameTooltip:AddLine("Smoking Gnomes Inc.", 1, 1, 1)
-	GameTooltip:AddLine(("%s  ·  %d this week"):format(SG.jobTitle(SG.myName, e.total), e.week), ACCENT[1], ACCENT[2], ACCENT[3])
+	GameTooltip:AddLine(("%s  ·  %d this week (%s pts)"):format(SG.jobTitle(SG.myName, e.total), e.week, SG.points(e.wp)), ACCENT[1], ACCENT[2], ACCENT[3])
 	local open = ns.Bounty.OpenCount()
 	if open > 0 then
 		GameTooltip:AddLine(open == 1 and "1 corporate spy at large" or (open .. " corporate spies at large"), RED[1], RED[2], RED[3])

@@ -290,6 +290,10 @@ local function plausible(old, new)
 	if new.week > new.total or new.wa > new.assists then
 		return false
 	end
+	-- At most 1.25 points (5 quarters) per gnome.
+	if (new.wp or 0) > 5 * new.week or (new.pp or 0) > 5 * (new.prevWeek or 0) then
+		return false
+	end
 	if new.weekId > SG.weekId() + 7 or new.u > SG.now() + 600 then
 		return false
 	end
@@ -412,13 +416,13 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		Sync.Queue(math.random(1, 4))
 		local since = tonumber(p[3])
 		scheduleRelay(sender, (since and since > 0) and since or nil)
-	elseif kind == "R" and #p == 4 + SG.FIELD_COUNT then
+	elseif kind == "R" and (#p == 4 + SG.FIELD_COUNT or #p == 4 + SG.OLD_FIELD_COUNT) then
 		-- Names may come without a realm: WoW Forever doesn't report one.
 		local name = p[3]
 		if not name or name == "" then
 			return
 		end
-		local raw = table.concat(p, "|", 4, 3 + SG.FIELD_COUNT)
+		local raw = table.concat(p, "|", 4, #p - 1)
 		ingest(name, raw, p[#p], name == sender)
 	elseif kind == "K" then
 		ns.Ledger.Receive(table.concat(p, "|", 3, #p - 1), p[#p])

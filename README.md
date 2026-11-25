@@ -63,9 +63,19 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70â
 
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
-- **Assist:** a gnome killed by someone in your party or raid, or a gnome that dies near you while you're awarded honor for it (you helped, even if the killer isn't grouped with you). Assists are shown in their own column and are used only to break ties.
+- **Assist:** a gnome killed by someone in your party or raid, or a gnome that dies near you while you're awarded honor for it (you helped, even if the killer isn't grouped with you). Assists score no points and are used only to break ties.
 - **World PvP only:** kills in battlegrounds and arenas don't count.
-- **Weekly reset:** at the server's weekly reset. Last week's top player is shown in the window header.
+- **Weekly points:** the Weekly board ranks by points. Each gnome scores by its level against yours, so a fair fight is worth the same at level 20 as at 60:
+
+  | The gnome isâ€¦ | Points |
+  |---|---|
+  | your level or higher | 1.25 |
+  | 1â€“5 levels below you | 1 |
+  | 6â€“10 levels below | 0.5 |
+  | 11 or more below | 0.25 |
+
+  Ties go to more gnomes, then more assists. Lifetime totals and job titles still count gnomes. Kills from before points arrived count 1 point each. `/gnomes points` prints this table in game.
+- **Weekly reset:** at the server's weekly reset. Last week's top scorer is Employee of the Week, shown in the window header.
 
 ## How sync works
 - Numbers travel over the hidden guild addon channel. Nothing appears in guild chat.
@@ -87,6 +97,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70â
 | `/gnomes stats` | Print your numbers |
 | `/gnomes status` | Check it's working: kills seen this session, guildmates with the addon heard from, version |
 | `/gnomes board` | Print this week's top 10 in chat |
+| `/gnomes points` | How weekly points work |
 | `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
 | `/gnomes spies` | List suspected corporate spies in chat |
 | `/gnomes spy <name> [reward]` | Officers: report a corporate spy (leave the name out to use your target) |
