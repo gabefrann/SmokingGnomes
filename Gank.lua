@@ -77,15 +77,11 @@ local function classColor(class)
 	return unpack(TEXT)
 end
 
--- An open Recall Notice on this name, if any.
+-- An open corporate spy report on this player, if any.
 local function recallFor(name)
-	local want = name:lower()
 	for _, row in ipairs(ns.Bounty.List()) do
-		if row.state == "open" then
-			local t = row.b.target:match("^[^%-%s]+")
-			if t and t:lower() == want then
-				return row.b
-			end
+		if row.state == "open" and SG.sameName(row.b.target, name) then
+			return row.b
 		end
 	end
 	return nil
@@ -213,8 +209,7 @@ local function check(unit)
 	if not okE or plain(enemy) ~= true then
 		return
 	end
-	local okN, name = pcall(UnitName, unit)
-	name = okN and SG.str(name)
+	local name = SG.unitFullName(unit) -- "Legs Dogman": first name and surname
 	if not name then
 		return
 	end
@@ -233,7 +228,13 @@ end
 -- Panel
 ---------------------------------------------------------------------------
 
+-- Forever names have a surname; it's not confirmed whether /targetexact wants the full
+-- name or the first name, so try the full name and then the first name.
 local function macroFor(name)
+	local first = name:match("^%S+")
+	if first and first ~= name then
+		return "/targetexact " .. name .. "\n/targetexact " .. first
+	end
 	return "/targetexact " .. name
 end
 

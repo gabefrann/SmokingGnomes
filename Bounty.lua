@@ -41,6 +41,15 @@ end
 
 function SG.IsOfficer(name)
 	local rank = SG.roster and SG.roster[name]
+	if rank == nil and SG.roster then
+		-- The roster may list names differently (first name only, or with a realm).
+		for rosterName, r in pairs(SG.roster) do
+			if SG.sameName(rosterName, name) then
+				rank = r
+				break
+			end
+		end
+	end
 	if rank == nil then
 		return nil -- unknown (roster not loaded, or not in the guild)
 	end
@@ -262,9 +271,8 @@ end
 ---------------------------------------------------------------------------
 
 local function findOpen(target, poster)
-	local want = target:lower()
 	for _, b in pairs(db()) do
-		if b.target:lower() == want and Bounty.State(b) == "open" and (not poster or b.poster == poster) then
+		if SG.sameName(b.target, target) and Bounty.State(b) == "open" and (not poster or b.poster == poster) then
 			return b
 		end
 	end
@@ -279,11 +287,12 @@ function Bounty.Post(target, reward)
 	elseif not officer then
 		return false, "Only officers can report corporate spies."
 	end
-	target = trim(target):gsub("%s+", "")
+	-- Names can have a surname ("Legs Dogman"); capitalise each part.
+	target = SG.fullName(trim(target)) or ""
 	if #target < 2 or #target > 40 then
-		return false, "Enter the player's name, like Fizzwick or Fizzwick-Realm."
+		return false, "Enter the player's name, like Fizzwick or Legs Dogman."
 	end
-	target = target:sub(1, 1):upper() .. target:sub(2)
+	target = target:gsub("(%S)(%S*)", function(a, b) return a:upper() .. b end)
 	if findOpen(target) then
 		return false, "There's already a spy report on " .. target .. "."
 	end
@@ -314,7 +323,7 @@ function Bounty.Post(target, reward)
 end
 
 function Bounty.Cancel(target)
-	local b = findOpen(trim(target):gsub("%s+", ""), SG.myName)
+	local b = findOpen(SG.fullName(trim(target)) or "", SG.myName)
 	if not b then
 		return false, "You haven't reported that player as a spy."
 	end
@@ -329,11 +338,9 @@ end
 -- Claiming: called for every resolved world PvP kill
 ---------------------------------------------------------------------------
 
--- Match on the character name only: WoW Forever doesn't report realms reliably.
+-- Full name match ("Legs Dogman"); a report with just a first name matches any surname.
 local function matches(b, name, realm)
-	local tName = b.target:match("^[^%-%s]+")
-	local vName = name and name:match("^[^%-%s]+")
-	return tName ~= nil and vName ~= nil and tName:lower() == vName:lower()
+	return SG.sameName(b.target, name)
 end
 
 local function better(new, old)

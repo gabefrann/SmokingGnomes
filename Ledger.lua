@@ -35,11 +35,10 @@ local function myRealm()
 	return ok and SG.str(r) or ""
 end
 
--- One key per victim: the lower-case character name. WoW Forever doesn't report realms
--- reliably, so the realm is left out to keep one tally per gnome.
+-- One key per victim: the lower-case full name ("legs dogman"), without any realm.
 function Ledger.Key(name, realm)
-	local base = type(name) == "string" and name:match("^[^%-%s]+")
-	return base and base:lower() or nil
+	local full = SG.fullName(name)
+	return full and full:lower() or nil
 end
 
 local function encode(k)

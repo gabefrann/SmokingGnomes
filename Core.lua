@@ -123,23 +123,55 @@ function SG.myRealm()
 	return realm
 end
 
--- One consistent key per player: the bare character name. WoW Forever is inconsistent
--- about realms (none from the realm APIs, but "Lih-Zaddi" or "Lih Zaddi" from chat
--- and tooltips), and a guild lives on one realm, so the realm part is always dropped.
--- Character names never contain "-" or spaces.
+-- One consistent key per player: the full character name. WoW Forever characters have
+-- a first name and a surname ("Lih Zaddi"), and chat senders and GetPlayerInfoByGUID
+-- give both. A "-Realm" suffix, if any, is dropped: a guild lives on one realm.
 function SG.fullName(name)
 	name = str(name)
 	if not name then
 		return nil
 	end
-	return name:match("^[^%-%s]+")
+	name = name:gsub("%-.*$", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+	return name ~= "" and name or nil
 end
 
+-- A unit's full name. On Forever, UnitName's second value is the surname.
+function SG.unitFullName(unit)
+	local ok, first, surname = call(UnitName, unit)
+	first = ok and str(first)
+	if not first then
+		return nil
+	end
+	surname = str(surname)
+	if surname and not first:find(" ", 1, true) then
+		first = first .. " " .. surname
+	end
+	return SG.fullName(first)
+end
+
+-- Do two names refer to the same character? "Legs" matches "Legs Dogman" when only a
+-- first name was given (an officer typing a spy's name, older saved data).
+function SG.sameName(a, b)
+	a, b = SG.fullName(a), SG.fullName(b)
+	if not a or not b then
+		return false
+	end
+	a, b = a:lower(), b:lower()
+	if a == b then
+		return true
+	end
+	if not a:find(" ", 1, true) or not b:find(" ", 1, true) then
+		return a:match("^%S+") == b:match("^%S+")
+	end
+	return false
+end
+
+-- The name as shown: first name and surname, without any realm.
 function SG.shortName(full)
 	if not full then
 		return "?"
 	end
-	return full:match("^[^%-%s]+") or full
+	return SG.fullName(full) or full
 end
 
 function SG.ago(t)
@@ -657,8 +689,7 @@ local function onTargetChanged()
 	if not okR or str(race) ~= "Gnome" then
 		return
 	end
-	local okN, name = call(UnitName, "target")
-	name = okN and str(name)
+	local name = SG.unitFullName("target")
 	if name then
 		lastGnomeTarget = { name = name, guid = guidOf("target"), t = SG.now() }
 	end
@@ -721,7 +752,7 @@ SG.TITLES = {
 
 -- Returns title, next title (or nil), gnomes still needed for it.
 function SG.jobTitle(name, total)
-	if name and name == SG.guildMaster then
+	if name and SG.guildMaster and SG.sameName(name, SG.guildMaster) then
 		return "CEO"
 	end
 	total = total or 0
@@ -928,15 +959,19 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		if cancel then
 			rest = rest:gsub("^%S+%s*", "")
 		end
+		-- Name: one word, or two if the second is capitalised like a surname ("Legs Dogman").
+		-- The reward is the rest, so it should start with a number or a lower-case word.
 		local name, reward = rest:match("^(%S+)%s*(.*)$")
+		if name and reward then
+			local surname, after = reward:match("^(%u[%l']+)%s*(.*)$")
+			if surname then
+				name, reward = name .. " " .. surname, after
+			end
+		end
 		if not name then
 			local okT, isPlayer = call(UnitIsPlayer, "target")
 			if okT and not SG.secret(isPlayer) and isPlayer == true then
-				local okN, tName, tRealm = call(UnitName, "target")
-				name = okN and str(tName)
-				if name and str(tRealm) then
-					name = name .. "-" .. str(tRealm)
-				end
+				name = SG.unitFullName("target")
 			end
 		end
 		if not name then
@@ -1038,10 +1073,19 @@ f:SetScript("OnEvent", function(_, event, ...)
 			initDB()
 		end
 	elseif event == "PLAYER_LOGIN" then
-		SG.myName = SG.fullName(UnitName("player"))
+		SG.myName = SG.unitFullName("player")
 		SG.myGUID = guidOf("player")
 		local _, classFile = UnitClass("player")
 		SG.myClass = str(classFile)
+		-- Before 0.14 players were keyed by first name only. Move my Lab Log over and
+		-- drop my old first-name entry (its signature covers the old name, and the
+		-- guild still holds my numbers if there were any).
+		local first = SG.myName:match("^%S+")
+		if first ~= SG.myName then
+			SG.db.recent[SG.myName] = SG.db.recent[SG.myName] or SG.db.recent[first]
+			SG.db.recent[first] = nil
+			SG.db.players[first] = nil
+		end
 		verifyStore()
 		local own = SG.db.players[SG.myName]
 		SG.freshStart = not own or (own.u or 0) == 0

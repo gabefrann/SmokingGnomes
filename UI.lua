@@ -298,10 +298,9 @@ end
 local function postFromForm()
 	local target, reward = form.target:GetText(), form.reward:GetText()
 	if target == "" then
-		local okN, tName, tRealm = pcall(UnitName, "target")
 		local okP, isPlayer = pcall(UnitIsPlayer, "target")
-		if okN and okP and not SG.secret(isPlayer) and isPlayer == true and SG.str(tName) then
-			target = SG.str(tRealm) and (tName .. "-" .. tRealm) or tName
+		if okP and not SG.secret(isPlayer) and isPlayer == true then
+			target = SG.unitFullName("target") or ""
 		end
 	end
 	local ok, err = ns.Bounty.Post(target, reward)
@@ -1134,28 +1133,24 @@ local function tooltipPlayer(tt, data)
 		source = guid and "unit"
 	end
 	dbg("guid from %s", tostring(source))
-	local name, realm
+	-- GetPlayerInfoByGUID gives the full name ("Legs Dogman"); UnitName gives the
+	-- first name and, on Forever, the surname as its second value.
+	local name
 	if guid and guid:match("^Player%-") then
-		local ok, _, _, _, _, _, n, r = pcall(GetPlayerInfoByGUID, guid)
-		if ok then
-			name, realm = SG.str(n), SG.str(r)
-		end
+		local ok, _, _, _, _, _, n = pcall(GetPlayerInfoByGUID, guid)
+		name = ok and SG.fullName(n) or nil
 	end
 	if not name and unit then
 		local okP, isPlayer = pcall(UnitIsPlayer, unit)
 		if okP and not SG.secret(isPlayer) and isPlayer == true then
-			local ok, n, r = pcall(UnitName, unit)
-			if ok then
-				name, realm = SG.str(n), SG.str(r)
-			end
+			name = SG.unitFullName(unit)
 		end
 	end
-	dbg("unit=%s guid=%s name=%s realm=%s", tostring(unit), tostring(guid and guid:sub(1, 14)), tostring(name), tostring(realm))
+	dbg("unit=%s guid=%s name=%s", tostring(unit), tostring(guid and guid:sub(1, 14)), tostring(name))
 	if not name then
 		return nil
 	end
-	local full = SG.fullName(realm and (name .. "-" .. realm:gsub("[%s%-']", "")) or name)
-	return full, name, realm
+	return name, name, nil
 end
 
 local function onUnitTooltip(tt, data)
@@ -1196,12 +1191,10 @@ local function onUnitTooltip(tt, data)
 			tt:AddLine(STAR .. " Employee of the Week", GOLD[1], GOLD[2], GOLD[3])
 		end
 	end
-	-- Enemies with an open Recall Notice.
-	local short = full:match("^[^%-]+")
+	-- Players reported as corporate spies.
 	for _, row in ipairs(ns.Bounty.List()) do
 		if row.state == "open" then
-			local tName = row.b.target:match("^[^%-]+")
-			if tName and short and tName:lower() == short:lower() then
+			if SG.sameName(row.b.target, full) then
 				tt:AddLine(ICON_OPEN .. " Corporate spy  ·  " .. row.b.reward, RED[1], RED[2], RED[3])
 				break
 			end
