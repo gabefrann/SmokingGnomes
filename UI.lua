@@ -817,17 +817,47 @@ local function dbg(fmt, ...)
 	end
 end
 
--- Find out which player a tooltip is about. The GUID in the tooltip's data works even
--- when a unit frame or tooltip addon shows it without a usable unit token.
+-- Forever can hand addons a locked ("secret") tooltip data table, especially for
+-- players. Reading a field of one errors, so check first (as Questie does).
+local function publicTable(v)
+	if type(v) ~= "table" or SG.secret(v) then
+		return false
+	end
+	if type(issecrettable) == "function" then
+		local ok, locked = pcall(issecrettable, v)
+		if not ok or locked == true then
+			return false
+		end
+	end
+	return true
+end
+
+local function guidOfUnit(unit)
+	local ok, g = pcall(UnitGUID, unit)
+	return ok and SG.str(g) or nil
+end
+
+-- Find out which player a tooltip is about, trying in turn: the tooltip's data, the
+-- unit under the mouse (also set when hovering a unit frame), and the tooltip's unit.
 local function tooltipPlayer(tt, data)
-	local guid = data and SG.str(data.guid)
+	local guid, source
+	if publicTable(data) then
+		local ok, g = pcall(function() return data.guid end)
+		guid = ok and SG.str(g) or nil
+		source = guid and "data"
+	end
+	if not guid then
+		guid = guidOfUnit("mouseover")
+		source = guid and "mouseover"
+	end
 	local unit
 	local okU, _, u = pcall(tt.GetUnit, tt)
 	unit = okU and SG.str(u) or nil
 	if not guid and unit then
-		local okG, g = pcall(UnitGUID, unit)
-		guid = okG and SG.str(g) or nil
+		guid = guidOfUnit(unit)
+		source = guid and "unit"
 	end
+	dbg("guid from %s", tostring(source))
 	local name, realm
 	if guid and guid:match("^Player%-") then
 		local ok, _, _, _, _, _, n, r = pcall(GetPlayerInfoByGUID, guid)

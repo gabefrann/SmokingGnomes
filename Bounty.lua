@@ -329,19 +329,11 @@ end
 -- Claiming: called for every resolved world PvP kill
 ---------------------------------------------------------------------------
 
+-- Match on the character name only: WoW Forever doesn't report realms reliably.
 local function matches(b, name, realm)
-	local tName, tRealm = b.target:match("^([^%-]+)%-?(.*)$")
-	if not tName or tName:lower() ~= name:lower() then
-		return false
-	end
-	if tRealm == "" then
-		return true
-	end
-	if realm == nil or realm == "" then
-		local ok, mine = pcall(GetNormalizedRealmName)
-		realm = ok and mine or ""
-	end
-	return normRealm(tRealm) == normRealm(realm)
+	local tName = b.target:match("^[^%-%s]+")
+	local vName = name and name:match("^[^%-%s]+")
+	return tName ~= nil and vName ~= nil and tName:lower() == vName:lower()
 end
 
 local function better(new, old)

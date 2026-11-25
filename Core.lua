@@ -123,30 +123,23 @@ function SG.myRealm()
 	return realm
 end
 
--- One consistent key per player. With a known realm it's Name-Realm; when the game
--- reports no realm (WoW Forever), every name is reduced to the bare name so that
--- roster, chat senders, tooltips and saved data all agree.
+-- One consistent key per player: the bare character name. WoW Forever is inconsistent
+-- about realms (none from the realm APIs, but "Lih-Zaddi" or "Lih Zaddi" from chat
+-- and tooltips), and a guild lives on one realm, so the realm part is always dropped.
+-- Character names never contain "-" or spaces.
 function SG.fullName(name)
 	name = str(name)
 	if not name then
 		return nil
 	end
-	local realm = SG.myRealm()
-	if not realm then
-		return name:match("^[^%-]+")
-	end
-	if not name:find("-", 1, true) then
-		name = name .. "-" .. realm
-	end
-	return name
+	return name:match("^[^%-%s]+")
 end
 
 function SG.shortName(full)
 	if not full then
 		return "?"
 	end
-	local ok, n = call(Ambiguate, full, "none")
-	return (ok and str(n)) or full
+	return full:match("^[^%-%s]+") or full
 end
 
 function SG.ago(t)
@@ -710,8 +703,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		end
 	elseif cmd == "status" then
 		local d = SG.diag
-		SG.print(("Version %s. You are %s%s."):format(SG.RELEASE, tostring(SG.myName),
-			SG.myRealm() and "" or " (the game reports no realm, which is normal on Forever)"))
+		SG.print(("Version %s. You are %s."):format(SG.RELEASE, tostring(SG.myName)))
 		-- Guildmates running the addon, heard from this session.
 		local peers = {}
 		for name in pairs(d.peers) do

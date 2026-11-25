@@ -35,15 +35,11 @@ local function myRealm()
 	return ok and SG.str(r) or ""
 end
 
--- One key per victim: lower-case name plus normalized realm.
+-- One key per victim: the lower-case character name. WoW Forever doesn't report realms
+-- reliably, so the realm is left out to keep one tally per gnome.
 function Ledger.Key(name, realm)
-	if not name then
-		return nil
-	end
-	if not realm or realm == "" then
-		realm = myRealm()
-	end
-	return name:lower() .. "-" .. normRealm(realm)
+	local base = type(name) == "string" and name:match("^[^%-%s]+")
+	return base and base:lower() or nil
 end
 
 local function encode(k)
