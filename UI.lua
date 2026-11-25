@@ -734,7 +734,7 @@ local toast
 local function buildToast()
 	toast = CreateFrame("Frame", nil, UIParent)
 	toast:SetSize(400, 60)
-	toast:SetPoint("TOP", 0, -170)
+	toast:SetPoint("TOP", 0, -90)
 	toast:SetFrameStrata("HIGH")
 	toast:Hide()
 	toast.main = text(toast, 20, TEXT, "CENTER")
