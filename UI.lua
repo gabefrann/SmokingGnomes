@@ -230,8 +230,10 @@ local function makeRow()
 	r:SetScript("OnLeave", GameTooltip_Hide)
 	r:SetScript("OnMouseUp", function(self, button)
 		if button == "RightButton" and IsShiftKeyDown() and self.cancelTarget then
-			local ok, err = ns.Bounty.Cancel(self.cancelTarget)
-			SG.print(ok and ("Recall Notice on " .. self.cancelTarget .. " cancelled.") or err)
+			-- Cancel refreshes the list, which clears self.cancelTarget, so keep a copy.
+			local target = self.cancelTarget
+			local ok, err = ns.Bounty.Cancel(target)
+			SG.print(ok and ("Recall Notice on " .. target .. " cancelled.") or tostring(err))
 		end
 	end)
 	return r
