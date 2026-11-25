@@ -111,7 +111,10 @@ local function callout(s, bounty)
 		ns.UI.Notice("Gnome spotted: " .. s.name, "green", details(s), note)
 	end
 	if SG.db.settings.gankSound ~= false then
-		pcall(PlaySound, (SOUNDKIT and SOUNDKIT.MAP_PING) or 3175, "Master")
+		-- Sound files DBM uses on this client, on the Master channel so they're heard
+		-- even with sound effects turned down: a ding for gnomes, the ready-check chime
+		-- for Recall targets.
+		pcall(PlaySoundFile, bounty and 567478 or 567458, "Master")
 	end
 end
 
