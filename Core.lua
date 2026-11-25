@@ -644,7 +644,8 @@ local HELP = {
 	"/gnomes recall cancel <name>  officers: cancel your notice",
 	"/gnomes toast  turn the kill popup on or off",
 	"/gnomes crest  show the guild crest large, with its colours (for screenshots)",
-	"/gnomes crest off | on  use the logo file instead of the live crest, or switch back",
+	"/gnomes crest on | off  try the live guild crest instead of the logo file, or switch back",
+	"/gnomes tipdebug  print what the tooltip hook sees for the next 5 players you hover",
 	"/gnomes version  your version, and whether a newer one is out",
 	"/gnomes sync  ask the guild for fresh numbers",
 	"/gnomes test  show a fake kill (doesn't change your numbers)",
@@ -680,6 +681,8 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		else
 			ns.UI.ShowCrestSheet()
 		end
+	elseif cmd == "tipdebug" then
+		ns.UI.TipDebug()
 	elseif cmd == "version" then
 		SG.print(("You have %s.%s"):format(SG.RELEASE,
 			SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) and (" " .. SG.latestRelease .. " is out.") or ""))

@@ -77,8 +77,11 @@ end
 local CIRCLE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask" -- a white filled circle
 local crests = {}
 
-local function tabardInfo()
-	if SG.db and SG.db.settings.crest == false then
+-- The live crest is opt-in (/gnomes crest on): Forever's emblem file doesn't map onto
+-- a single icon, so the logo file is the default. `force` is for the crest sheet,
+-- which always shows what the game gives so it can be captured.
+local function tabardInfo(force)
+	if not force and not (SG.db and SG.db.settings.crest == true) then
 		return nil
 	end
 	if not (C_GuildInfo and C_GuildInfo.GetGuildTabardInfo) then
@@ -102,7 +105,7 @@ local function rgb(color)
 end
 
 local function applyCrest(c)
-	local info = tabardInfo()
+	local info = tabardInfo(c.force)
 	local live = info ~= nil
 	c.fallback:SetShown(not live)
 	c.ring:SetShown(live)
@@ -159,6 +162,7 @@ function UI.ShowCrestSheet()
 		sheet:SetScript("OnMouseUp", sheet.Hide)
 		tinsert(UISpecialFrames, "SmokingGnomesCrestSheet")
 		sheet.crest = makeCrest(sheet, 512)
+		sheet.crest.force = true
 		sheet.crest:SetPoint("TOP", 0, -24)
 		sheet.info = text(sheet, 12, TEXT, "CENTER")
 		sheet.info:SetPoint("BOTTOM", 0, 44)
@@ -167,7 +171,7 @@ function UI.ShowCrestSheet()
 		sheet.hint:SetText("Take a screenshot (Print Screen), then click or press Escape to close.")
 	end
 	applyCrest(sheet.crest)
-	local info = tabardInfo()
+	local info = tabardInfo(true)
 	if info then
 		local function hexOf(c)
 			local r, g, b = rgb(c)
@@ -801,39 +805,67 @@ end
 -- Player tooltips: coworkers show their job title to everyone running the addon.
 ---------------------------------------------------------------------------
 
-local function unitFullName(unit)
-	local ok, name, realm = pcall(UnitName, unit)
-	name = ok and SG.str(name)
+-- /gnomes tipdebug prints what the hook sees for the next few unit tooltips.
+local tipDebug = 0
+function UI.TipDebug()
+	tipDebug = 5
+	SG.print("Hover over 5 players (yourself included). I'll print what the tooltip hook sees.")
+end
+local function dbg(fmt, ...)
+	if tipDebug > 0 then
+		SG.print("tooltip: " .. fmt:format(...))
+	end
+end
+
+-- Find out which player a tooltip is about. The GUID in the tooltip's data works even
+-- when a unit frame or tooltip addon shows it without a usable unit token.
+local function tooltipPlayer(tt, data)
+	local guid = data and SG.str(data.guid)
+	local unit
+	local okU, _, u = pcall(tt.GetUnit, tt)
+	unit = okU and SG.str(u) or nil
+	if not guid and unit then
+		local okG, g = pcall(UnitGUID, unit)
+		guid = okG and SG.str(g) or nil
+	end
+	local name, realm
+	if guid and guid:match("^Player%-") then
+		local ok, _, _, _, _, _, n, r = pcall(GetPlayerInfoByGUID, guid)
+		if ok then
+			name, realm = SG.str(n), SG.str(r)
+		end
+	end
+	if not name and unit then
+		local okP, isPlayer = pcall(UnitIsPlayer, unit)
+		if okP and not SG.secret(isPlayer) and isPlayer == true then
+			local ok, n, r = pcall(UnitName, unit)
+			if ok then
+				name, realm = SG.str(n), SG.str(r)
+			end
+		end
+	end
+	dbg("unit=%s guid=%s name=%s realm=%s", tostring(unit), tostring(guid and guid:sub(1, 14)), tostring(name), tostring(realm))
 	if not name then
 		return nil
 	end
-	realm = SG.str(realm)
-	if realm then
-		return name .. "-" .. realm:gsub("[%s%-]", "")
-	end
-	return SG.fullName(name)
+	local full = realm and (name .. "-" .. realm:gsub("[%s%-']", "")) or SG.fullName(name)
+	return full, name, realm
 end
 
-local function onUnitTooltip(tt)
-	if tt ~= GameTooltip or not SG.db or not SG.myName then
+local function onUnitTooltip(tt, data)
+	if not SG.db or not SG.myName or not tt or not tt.AddLine then
 		return
 	end
-	local ok, _, unit = pcall(tt.GetUnit, tt)
-	unit = ok and SG.str(unit)
-	if not unit then
-		return
+	local full, vName, vRealm = tooltipPlayer(tt, data)
+	if tipDebug > 0 then
+		dbg("player=%s known=%s (hook: %s)", tostring(full), tostring(full and SG.db.players[full] ~= nil), tostring(SG.tooltipHook))
+		tipDebug = tipDebug - 1
 	end
-	local okP, isPlayer = pcall(UnitIsPlayer, unit)
-	if not okP or SG.secret(isPlayer) or isPlayer ~= true then
-		return
-	end
-	local full = unitFullName(unit)
 	if not full then
 		return
 	end
 	-- Victims: how often the company has smoked this player.
-	local okN, vName, vRealm = pcall(UnitName, unit)
-	local v = okN and SG.str(vName) and ns.Ledger.Victim(vName, SG.str(vRealm))
+	local v = ns.Ledger.Victim(vName, vRealm)
 	if v and v.n > 0 then
 		tt:AddLine(("Smoked by the company: %d×"):format(v.n), ACCENT[1], ACCENT[2], ACCENT[3])
 		local label = ns.Ledger.Label(v.n)
@@ -869,13 +901,17 @@ local function onUnitTooltip(tt)
 			end
 		end
 	end
+	pcall(tt.Show, tt) -- resize to fit the added lines
 end
 
 local function hookTooltips()
 	local hooked = false
 	if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
-		hooked = pcall(TooltipDataProcessor.AddTooltipPostCall, Enum.TooltipDataType.Unit, function(tt)
-			pcall(onUnitTooltip, tt)
+		hooked = pcall(TooltipDataProcessor.AddTooltipPostCall, Enum.TooltipDataType.Unit, function(tt, data)
+			local ok, err = pcall(onUnitTooltip, tt, data)
+			if not ok then
+				dbg("error: %s", tostring(err))
+			end
 		end)
 	end
 	if not hooked and GameTooltip:HasScript("OnTooltipSetUnit") then
@@ -883,6 +919,7 @@ local function hookTooltips()
 			pcall(onUnitTooltip, tt)
 		end)
 	end
+	SG.tooltipHook = hooked and "TooltipDataProcessor" or "OnTooltipSetUnit"
 end
 
 ---------------------------------------------------------------------------

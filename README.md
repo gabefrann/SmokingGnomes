@@ -46,7 +46,7 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 - Counting starts with version 0.8.0. Earlier kills aren't included.
 
 ## Guild crest
-The window and popups draw the guild's own tabard emblem from the game, in the guild's colours. If the game doesn't provide it, or you type `/gnomes crest`, the addon uses the logo file instead.
+The window and popups use the logo file. `/gnomes crest` shows what the game itself gives for the guild's tabard emblem, large, and prints its file number and colours, which is what the logo is rebuilt from. `/gnomes crest on` tries drawing that live crest in the window instead, and `/gnomes crest off` switches back.
 
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
@@ -78,7 +78,8 @@ The window and popups draw the guild's own tabard emblem from the game, in the g
 | `/gnomes recall cancel <name>` | Officers: cancel your notice |
 | `/gnomes toast` | Turn popups on or off |
 | `/gnomes crest` | Show the guild crest large with its exact colours (for screenshots) |
-| `/gnomes crest off` / `on` | Use the logo file instead of the live crest, or switch back |
+| `/gnomes crest on` / `off` | Try the live guild crest instead of the logo file, or switch back |
+| `/gnomes tipdebug` | Print what the tooltip hook sees for the next 5 players you hover |
 | `/gnomes version` | Show your version, and whether a newer one is out |
 
 ## Releasing a new version (maintainers)
