@@ -15,9 +15,13 @@ ns.Gank = Gank
 
 local CALLOUT_EVERY = 180 -- seconds between callouts for the same player
 local KEEP = 180          -- seconds a spotted player stays on the list
-local ROWS = 5
+local ROWS = 5         -- rows shown at the default size
+local MAX_ROWS = 12    -- rows available when the panel is resized taller
 local ROW_H = 20
 local W = 210
+local MIN_W, MIN_H, MAX_W = 170, 52 + 1 * ROW_H, 420
+local MAX_H = 52 + MAX_ROWS * ROW_H
+local visibleRows = ROWS
 local WHITE = "Interface\\Buttons\\WHITE8x8"
 local FONT = STANDARD_TEXT_FONT
 
@@ -249,7 +253,8 @@ end
 
 local function build()
 	hud = CreateFrame("Frame", "SmokingGnomesGankPanel", UIParent, "BackdropTemplate")
-	hud:SetSize(W, 52 + ROWS * ROW_H)
+	local size = SG.db.settings.gankSize
+	hud:SetSize(size and size[1] or W, size and size[2] or (52 + ROWS * ROW_H))
 	hud:SetFrameStrata("MEDIUM")
 	hud:SetClampedToScreen(true)
 	hud:SetMovable(true)
@@ -283,20 +288,21 @@ local function build()
 	div:SetPoint("TOPRIGHT", -8, -28)
 
 	rows = {}
-	for i = 1, ROWS do
+	for i = 1, MAX_ROWS do
 		local r = secureButton("SmokingGnomesGankRow" .. i, hud)
-		r:SetSize(W - 16, ROW_H)
+		r:SetHeight(ROW_H)
 		r:SetPoint("TOPLEFT", 8, -32 - (i - 1) * ROW_H)
+		r:SetPoint("TOPRIGHT", -8, -32 - (i - 1) * ROW_H)
 		local hl = r:CreateTexture(nil, "HIGHLIGHT")
 		hl:SetTexture(WHITE)
 		hl:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.15)
 		hl:SetAllPoints()
 		r.name = text(r, 12)
 		r.name:SetPoint("LEFT", 4, 0)
-		r.name:SetWidth(108)
+		r.name:SetPoint("RIGHT", r, "RIGHT", -64, 0)
 		r.info = text(r, 11, MUTED, "RIGHT")
 		r.info:SetPoint("RIGHT", -4, 0)
-		r.info:SetWidth(80)
+		r.info:SetWidth(60)
 		r:Hide()
 		rows[i] = r
 	end
@@ -325,6 +331,39 @@ local function build()
 			end
 		end
 	end)
+
+	-- Corner grip: resize outside combat (the panel holds secure buttons, which the
+	-- game won't let addons move or resize during a fight).
+	hud:SetResizable(true)
+	if hud.SetResizeBounds then
+		hud:SetResizeBounds(MIN_W, MIN_H, MAX_W, MAX_H)
+	else
+		hud:SetMinResize(MIN_W, MIN_H)
+		hud:SetMaxResize(MAX_W, MAX_H)
+	end
+	local grip = CreateFrame("Button", nil, hud)
+	grip:SetSize(16, 16)
+	grip:SetPoint("BOTTOMRIGHT", -2, 2)
+	grip:SetNormalTexture(386864)    -- the chat window's size grabber
+	grip:SetPushedTexture(386862)
+	grip:SetHighlightTexture(386863)
+	grip:SetScript("OnMouseDown", function(_, button)
+		if button == "LeftButton" and not InCombatLockdown() then
+			hud:StartSizing("BOTTOMRIGHT")
+		end
+	end)
+	grip:SetScript("OnMouseUp", function()
+		hud:StopMovingOrSizing()
+		if not InCombatLockdown() then
+			SG.db.settings.gankSize = { math.floor(hud:GetWidth() + 0.5), math.floor(hud:GetHeight() + 0.5) }
+			savePosition() -- sizing can re-anchor the panel
+			Gank.Refresh()
+		end
+	end)
+	hud:SetScript("OnSizeChanged", function(_, _, h)
+		visibleRows = math.max(1, math.min(MAX_ROWS, math.floor((h - 52) / ROW_H)))
+	end)
+	visibleRows = math.max(1, math.min(MAX_ROWS, math.floor((hud:GetHeight() - 52) / ROW_H)))
 
 	targetButton = secureButton("SmokingGnomesTargetGnome", UIParent)
 	targetButton:SetSize(1, 1)
@@ -371,7 +410,7 @@ function Gank.Refresh()
 	end)
 
 	for i, r in ipairs(rows) do
-		local s = list[i]
+		local s = i <= visibleRows and list[i] or nil
 		r.spot = s
 		if s then
 			r:SetAttribute("macrotext1", macroFor(s.name))
