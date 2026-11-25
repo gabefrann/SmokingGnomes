@@ -317,21 +317,18 @@ end
 -- Commands view: the slash commands people actually use, one line each.
 local HELP = {
 	{ "/gnomes", "Open this window" },
-	{ "/gnomes stats", "Your title and numbers" },
+	{ "/gnomes stats", "Your numbers" },
 	{ "/gnomes status", "Check it's working" },
-	{ "/gnomes points", "How weekly points work" },
-	{ "/gnomes gank", "Gank mode on or off" },
-	{ "   Party member", "Their target" },
-	{ "   Guild member · 2m", "Seen in your zone" },
-	{ "/gnomes settings", "Size, opacity, switches" },
-	{ "/gnomes spies", "List suspected spies" },
-	{ "/gnomes spy Name 50g", "Report one (officers)" },
+	{ "/gnomes points", "How points work" },
+	{ "/gnomes gank", "Gank mode on/off" },
+	{ "/gnomes settings", "Settings" },
+	{ "/gnomes spies", "List spies" },
+	{ "/gnomes spy Name 50g", "Report (officers)" },
 	{ "/gnomes spy cancel Name", "Withdraw yours" },
 	{ "/gnomes sync", "Refresh from guild" },
-	{ "/gnomes version", "Check for updates" },
-	{ "/gnomes test", "Preview the kill popup" },
+	{ "/gnomes test", "Preview a kill" },
 	{ "/gnomes check", "Self-test" },
-}
+} -- 12 lines fit the window; keep descriptions short enough not to be cut off
 local helpPanel, lastMode
 
 local function buildHelp()
