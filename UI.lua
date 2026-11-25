@@ -1222,9 +1222,20 @@ local function onUnitTooltip(tt, data)
 			tt:AddLine(table.concat(detail, "  ·  "), MUTED[1], MUTED[2], MUTED[3])
 		end
 	end
+	-- Every guild member gets the line, addon or not: their title from their numbers if
+	-- we have them, else Unpaid Intern (or CEO for the guild master).
 	local e = SG.db.players[full]
-	if e then
-		tt:AddLine(SG.jobTitle(full, e.total) .. " at Smoking Gnomes Inc.", ACCENT[1], ACCENT[2], ACCENT[3])
+	local member = e ~= nil or (SG.roster and SG.roster[full] ~= nil)
+	if not member and SG.roster then
+		for rosterName in pairs(SG.roster) do
+			if SG.sameName(rosterName, full) then
+				member = true
+				break
+			end
+		end
+	end
+	if member then
+		tt:AddLine(SG.jobTitle(full, e and e.total or 0) .. " at Smoking Gnomes Inc.", ACCENT[1], ACCENT[2], ACCENT[3])
 		if full == SG.lastWeekWinner() then
 			tt:AddLine(STAR .. " Employee of the Week", GOLD[1], GOLD[2], GOLD[3])
 		end
