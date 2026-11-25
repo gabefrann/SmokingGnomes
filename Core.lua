@@ -1077,13 +1077,23 @@ f:SetScript("OnEvent", function(_, event, ...)
 		SG.myGUID = guidOf("player")
 		local _, classFile = UnitClass("player")
 		SG.myClass = str(classFile)
-		-- Before 0.14 players were keyed by first name only. Move my Lab Log over and
-		-- drop my old first-name entry (its signature covers the old name, and the
-		-- guild still holds my numbers if there were any).
+		-- Before 0.14 players were keyed by first name only. Move my Lab Log and my
+		-- numbers over to the full name, re-signed under it (the signature covers the
+		-- name). The update time stays, so guildmates accept it as a continuation.
 		local first = SG.myName:match("^%S+")
 		if first ~= SG.myName then
 			SG.db.recent[SG.myName] = SG.db.recent[SG.myName] or SG.db.recent[first]
 			SG.db.recent[first] = nil
+			local old = SG.db.players[first]
+			if old and not SG.db.players[SG.myName] then
+				local e = SG.decode(first, old.raw, old.sig)
+				if e then
+					e.raw, e.sig = nil, nil
+					e.seen = old.seen
+					SG.db.players[SG.myName] = e
+					SG.seal(e)
+				end
+			end
 			SG.db.players[first] = nil
 		end
 		verifyStore()

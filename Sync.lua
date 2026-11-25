@@ -314,6 +314,15 @@ local function ingest(name, raw, sig, firsthand)
 	end
 
 	local players = SG.db.players
+	-- Before 0.14 entries used the first name only ("Lih"). Ignore such an entry when
+	-- this player is already known under the full name ("Lih Zaddi").
+	if not name:find(" ", 1, true) then
+		for key in pairs(players) do
+			if key:sub(1, #name + 1) == name .. " " then
+				return
+			end
+		end
+	end
 	local old = players[name]
 	if firsthand and old then
 		old.seen = SG.now()
@@ -331,6 +340,11 @@ local function ingest(name, raw, sig, firsthand)
 	new.seen = firsthand and SG.now() or (old and old.seen)
 	new.bad = old and old.bad
 	players[name] = new
+	-- The full-name entry replaces the same player's old first-name entry.
+	local first = name:match("^%S+")
+	if first and first ~= name and players[first] and first ~= SG.myName then
+		players[first] = nil
+	end
 	ns.UI.Refresh()
 end
 
