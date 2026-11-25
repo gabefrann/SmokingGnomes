@@ -437,8 +437,18 @@ end
 local recentTargets = {}
 local pending = {}
 
--- What this session has seen, for /gnomes status.
-SG.diag = { events = 0, mine = 0, msgs = 0, peers = {} }
+-- What this session has seen, for /gnomes status and /gnomes killlog.
+SG.diag = { events = 0, mine = 0, msgs = 0, peers = {}, killlog = {} }
+
+-- Kill recorder: the last 20 kill-related signals, so we can see what the game sends.
+local function logKill(fmt, ...)
+	local ok, line = pcall(string.format, fmt, ...)
+	local log = SG.diag.killlog
+	log[#log + 1] = date("%H:%M:%S") .. "  " .. (ok and line or fmt)
+	while #log > 20 do
+		table.remove(log, 1)
+	end
+end
 
 local function guidOf(unit)
 	local ok, g = call(UnitGUID, unit)
@@ -485,6 +495,7 @@ local function resolve(p)
 		return false
 	end
 	name = str(name)
+	logKill("party kill by %s: %s (%s)", p.kind, tostring(name), race)
 	if p.kind ~= "group" then
 		SG.diag.last = { t = SG.now(), name = name or "?", race = race, counted = race == "Gnome" }
 	end
@@ -513,6 +524,7 @@ local function onPartyKill(attacker, target)
 	SG.diag.events = SG.diag.events + 1
 	if SG.secret(attacker) or SG.secret(target) then
 		SG.diag.secret = (SG.diag.secret or 0) + 1
+		logKill("party kill: unreadable (combat restriction)")
 		return
 	end
 	attacker, target = str(attacker), str(target)
@@ -534,6 +546,121 @@ local function onPartyKill(attacker, target)
 	local p = { target = target, kind = kind, zone = zoneName(), t = t }
 	if not resolve(p) then
 		pending[#pending + 1] = p
+	end
+end
+
+---------------------------------------------------------------------------
+-- Helped kills. The game only reports kills by you, your pet or your group. A gnome
+-- that dies near you while you're awarded honor for it counts as an assist, whoever
+-- landed the blow: honor is the game's own proof that you took part.
+---------------------------------------------------------------------------
+
+local HELP_WINDOW = 6  -- seconds allowed between the death and your honor
+local SETTLE = 1.5     -- wait so a party kill (killing blow, group assist) is credited first
+local TARGET_MEMORY = 30
+local deaths = {}      -- recent player deaths near you
+local lastHonor = 0
+local lastGnomeTarget  -- { name, guid, t }: fallback when the death is unreadable
+local helped = {}      -- guid or name -> time credited
+
+-- Already credited as a killing blow or group assist?
+local function claimed(guid)
+	return guid ~= nil and recentTargets[guid] ~= nil and SG.now() - recentTargets[guid] < 60
+end
+
+local function matchHelped()
+	if not inWorld() then
+		return
+	end
+	local now = SG.now()
+	if now - lastHonor > HELP_WINDOW + SETTLE then
+		return
+	end
+	for i = #deaths, 1, -1 do
+		local d = deaths[i]
+		if now - d.t > 60 then
+			table.remove(deaths, i)
+		elseif not d.done and math.abs(lastHonor - d.t) <= HELP_WINDOW then
+			local name, guid, race = d.name, d.guid, d.race
+			if d.secret then
+				-- Unreadable death: credit the gnome you're targeting, but only if it's dead.
+				local g = lastGnomeTarget
+				local okD, dead = call(UnitIsDeadOrGhost, "target")
+				if g and now - g.t < TARGET_MEMORY and guidOf("target") == g.guid
+					and okD and not SG.secret(dead) and dead == true then
+					name, guid, race = g.name, g.guid, "Gnome"
+				end
+			end
+			if race == "Gnome" and name then
+				d.done = true
+				local key = guid or name
+				if claimed(guid) then
+					logKill("helped: %s already credited", name)
+				elseif not (helped[key] and now - helped[key] < 60) then
+					helped[key] = now
+					if guid then
+						recentTargets[guid] = now
+					end
+					logKill("helped: assist credited for %s%s", name, d.secret and " (from your target)" or "")
+					SG.recordKill({ victim = name, zone = zoneName(), assist = true })
+				end
+			end
+		end
+	end
+end
+
+local function onUnitDied(guid)
+	local now = SG.now()
+	for i = #deaths, 1, -1 do
+		if now - deaths[i].t > 60 then
+			table.remove(deaths, i)
+		end
+	end
+	if SG.secret(guid) then
+		deaths[#deaths + 1] = { t = now, secret = true }
+		logKill("death: unreadable unit (combat restriction)")
+	else
+		guid = str(guid)
+		if not guid or not guid:match("^Player%-") then
+			return
+		end
+		local ok, _, _, _, race, _, name = call(GetPlayerInfoByGUID, guid)
+		race, name = ok and str(race) or nil, ok and str(name) or nil
+		deaths[#deaths + 1] = { t = now, guid = guid, race = race, name = name }
+		logKill("death: %s (%s)", tostring(name), tostring(race))
+	end
+	C_Timer.After(SETTLE, matchHelped)
+end
+
+local function onHonor(event, text)
+	text = str(text)
+	-- System and currency messages are only honor if they say so.
+	if (event == "CHAT_MSG_SYSTEM" or event == "CHAT_MSG_CURRENCY") and not (text and text:lower():find("honor", 1, true)) then
+		return
+	end
+	lastHonor = SG.now()
+	logKill("honor (%s): %s", event, text and text:sub(1, 70) or "")
+	C_Timer.After(SETTLE, matchHelped)
+end
+
+-- Remember the last enemy gnome you targeted, for deaths the game won't name.
+local function onTargetChanged()
+	local okP, isPlayer = call(UnitIsPlayer, "target")
+	if not okP or SG.secret(isPlayer) or isPlayer ~= true then
+		return
+	end
+	local okE, enemy = call(UnitIsEnemy, "player", "target")
+	if not okE or SG.secret(enemy) or enemy ~= true then
+		return
+	end
+	local okR, _, race = call(UnitRace, "target")
+	if not okR or str(race) ~= "Gnome" then
+		return
+	end
+	local okN, name = call(UnitName, "target")
+	name = okN and str(name)
+	if name then
+		lastGnomeTarget = { name = name, guid = guidOf("target"), t = SG.now() }
 	end
 end
 
@@ -670,6 +797,7 @@ local HELP = {
 	"/gnomes crest  show the guild crest large, with its colours (for screenshots)",
 	"/gnomes crest on | off  try the live guild crest instead of the logo file, or switch back",
 	"/gnomes tipdebug  print what the tooltip hook sees for the next 5 players you hover",
+	"/gnomes killlog  the last 20 kill signals (deaths near you, honor, party kills)",
 	"/gnomes version  your version, and whether a newer one is out",
 	"/gnomes sync  ask the guild for fresh numbers",
 	"/gnomes test  show a fake kill (doesn't change your numbers)",
@@ -737,6 +865,16 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		end
 		if (d.secret or 0) > 0 then
 			print(("  %d kill event(s) were unreadable (combat restriction)."):format(d.secret))
+		end
+	elseif cmd == "killlog" then
+		local log = SG.diag.killlog
+		if #log == 0 then
+			SG.print("Kill log is empty. It records deaths near you, honor awards and party kills from this session.")
+		else
+			SG.print(("Last %d kill signals this session:"):format(#log))
+			for _, line in ipairs(log) do
+				print("  " .. line)
+			end
 		end
 	elseif cmd == "tipdebug" then
 		ns.UI.TipDebug()
@@ -846,7 +984,15 @@ f:RegisterEvent("PARTY_KILL")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("CHAT_MSG_ADDON")
 f:RegisterEvent("GUILD_ROSTER_UPDATE")
-pcall(f.RegisterEvent, f, "ADDON_RESTRICTION_STATE_CHANGED")
+f:RegisterEvent("PLAYER_TARGET_CHANGED")
+-- Helped kills: any death near you plus the honor you get for it. Some of these may
+-- not exist on every client, so they're registered safely.
+for _, e in ipairs({ "ADDON_RESTRICTION_STATE_CHANGED", "UNIT_DIED", "CHAT_MSG_COMBAT_HONOR_GAIN",
+	"CHAT_MSG_CURRENCY", "CHAT_MSG_SYSTEM", "PLAYER_PVP_KILLS_CHANGED" }) do
+	pcall(f.RegisterEvent, f, e)
+end
+local HONOR_EVENTS = { CHAT_MSG_COMBAT_HONOR_GAIN = true, CHAT_MSG_CURRENCY = true,
+	CHAT_MSG_SYSTEM = true, PLAYER_PVP_KILLS_CHANGED = true }
 
 f:SetScript("OnEvent", function(_, event, ...)
 	if event == "ADDON_LOADED" then
@@ -881,6 +1027,18 @@ f:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "PARTY_KILL" then
 		if SG.db and SG.myName then
 			onPartyKill(...)
+		end
+	elseif event == "UNIT_DIED" then
+		if SG.db and SG.myName then
+			onUnitDied(...)
+		end
+	elseif HONOR_EVENTS[event] then
+		if SG.db and SG.myName then
+			onHonor(event, event ~= "PLAYER_PVP_KILLS_CHANGED" and (...) or nil)
+		end
+	elseif event == "PLAYER_TARGET_CHANGED" then
+		if SG.db and SG.myName then
+			onTargetChanged()
 		end
 	elseif event == "PLAYER_REGEN_ENABLED" or event == "ADDON_RESTRICTION_STATE_CHANGED" then
 		if SG.db and SG.myName then

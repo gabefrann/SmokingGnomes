@@ -60,7 +60,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70Ã
 
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
-- **Assist:** a gnome killed by someone in your party or raid. Assists are shown in their own column and are used only to break ties.
+- **Assist:** a gnome killed by someone in your party or raid, or a gnome that dies near you while you're awarded honor for it (you helped, even if the killer isn't grouped with you). Assists are shown in their own column and are used only to break ties.
 - **World PvP only:** kills in battlegrounds and arenas don't count.
 - **Weekly reset:** at the server's weekly reset. Last week's top player is shown in the window header.
 
@@ -94,6 +94,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70Ã
 | `/gnomes help` | List all commands in chat and open the Commands view. The **?** button in the window does the same |
 | `/gnomes crest` | Show the guild crest large with its exact colours (for screenshots) |
 | `/gnomes crest on` / `off` | Try the live guild crest instead of the logo file, or switch back |
+| `/gnomes killlog` | The last 20 kill signals this session: deaths near you, honor awards, party kills, and what was credited |
 | `/gnomes tipdebug` | Print what the tooltip hook sees for the next 5 players you hover |
 | `/gnomes version` | Show your version, and whether a newer one is out |
 
