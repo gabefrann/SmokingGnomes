@@ -35,7 +35,7 @@ local LAB_NOTES = {
 	"Another batch for R&D.",
 }
 
-local frame, rows, tabs, footer, footerRight, sub, empty, colHeads, form
+local frame, rows, tabs, footer, footerRight, sub, empty, colHeads, form, companyLine
 local mode = "week"
 local champion -- last week's winner, refreshed with the window
 
@@ -233,7 +233,7 @@ local function makeRow()
 			-- Cancel refreshes the list, which clears self.cancelTarget, so keep a copy.
 			local target = self.cancelTarget
 			local ok, err = ns.Bounty.Cancel(target)
-			SG.print(ok and ("Recall Notice on " .. target .. " cancelled.") or tostring(err))
+			SG.print(ok and ("Spy report on " .. target .. " withdrawn.") or tostring(err))
 		end
 	end)
 	return r
@@ -323,9 +323,9 @@ local HELP = {
 	{ "/gnomes board", "Top 10 in chat" },
 	{ "/gnomes gank", "Gank mode on or off" },
 	{ "/gnomes settings", "Size, opacity, switches" },
-	{ "/gnomes recalls", "List open notices" },
-	{ "/gnomes recall Name 50g", "Post one (officers)" },
-	{ "/gnomes recall cancel Name", "Cancel yours" },
+	{ "/gnomes spies", "List suspected spies" },
+	{ "/gnomes spy Name 50g", "Report one (officers)" },
+	{ "/gnomes spy cancel Name", "Withdraw yours" },
 	{ "/gnomes sync", "Refresh from guild" },
 	{ "/gnomes version", "Check for updates" },
 	{ "/gnomes test", "Preview the kill popup" },
@@ -509,13 +509,13 @@ local function buildForm()
 	post:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
 	post.label = text(post, 11, TEXT, "CENTER")
 	post.label:SetPoint("CENTER")
-	post.label:SetText("Post")
+	post.label:SetText("Report")
 	post:SetScript("OnEnter", function(self)
 		self:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.7)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine("Post a Recall Notice", 1, 1, 1)
+		GameTooltip:AddLine("Report a corporate spy", 1, 1, 1)
 		GameTooltip:AddLine("Leave the name empty to use your current target.", MUTED[1], MUTED[2], MUTED[3])
-		GameTooltip:AddLine("The first guildmate to kill them claims it.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:AddLine("The first employee to take them out collects.", MUTED[1], MUTED[2], MUTED[3])
 		GameTooltip:Show()
 	end)
 	post:SetScript("OnLeave", function(self)
@@ -535,7 +535,7 @@ end
 
 local function build()
 	frame = CreateFrame("Frame", "SmokingGnomesFrame", UIParent, "BackdropTemplate")
-	frame:SetSize(W, 104 + (ROWS + 1) * ROW_H + 50)
+	frame:SetSize(W, 104 + (ROWS + 1) * ROW_H + 66)
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetClampedToScreen(true)
 	frame:SetMovable(true)
@@ -633,11 +633,11 @@ local function build()
 	sub:SetPoint("RIGHT", -PAD, 0)
 
 	local GAP = 14
-	tabs = { makeTab("Weekly Yield", "week", PAD) }
+	tabs = { makeTab("Weekly", "week", PAD) }
 	local x = PAD + tabs[1]:GetWidth() + GAP
 	tabs[2] = makeTab("Lifetime", "all", x)
 	x = x + tabs[2]:GetWidth() + GAP
-	tabs[3] = makeTab("Recalls", "recall", x)
+	tabs[3] = makeTab("Spies", "recall", x)
 	x = x + tabs[3]:GetWidth() + GAP
 	tabs[4] = makeTab("Lab Log", "mine", x)
 
@@ -674,13 +674,17 @@ local function build()
 
 	local div2 = rect(frame, BORDER[1], BORDER[2], BORDER[3], 0.6, "ARTWORK")
 	div2:SetHeight(1)
-	div2:SetPoint("BOTTOMLEFT", PAD, 34)
-	div2:SetPoint("BOTTOMRIGHT", -PAD, 34)
+	div2:SetPoint("BOTTOMLEFT", PAD, 50)
+	div2:SetPoint("BOTTOMRIGHT", -PAD, 50)
 
 	footer = text(frame, 11, TEXT)
-	footer:SetPoint("BOTTOMLEFT", PAD, 14)
+	footer:SetPoint("BOTTOMLEFT", PAD, 30)
 	footerRight = text(frame, 11, MUTED, "RIGHT")
-	footerRight:SetPoint("BOTTOMRIGHT", -PAD, 14)
+	footerRight:SetPoint("BOTTOMRIGHT", -PAD, 30)
+
+	-- The whole company's output this week, on every view.
+	companyLine = text(frame, 10, MUTED, "CENTER")
+	companyLine:SetPoint("BOTTOM", 0, 12)
 
 	frame:SetScript("OnShow", UI.Refresh)
 end
@@ -731,7 +735,7 @@ local function setRow(r, rank, name, kills, assists, e, isMe)
 	r.tip = { SG.shortName(name), title, last }
 	local recalls = ns.Bounty.CompletedBy(name)
 	if recalls > 0 then
-		r.tip[#r.tip + 1] = ("Recalls completed: %d"):format(recalls)
+		r.tip[#r.tip + 1] = ("Spies eliminated: %d"):format(recalls)
 	end
 	if isMe then
 		r.tip[#r.tip + 1] = "That's you"
@@ -803,7 +807,7 @@ end
 ---------------------------------------------------------------------------
 
 local function refreshRecalls()
-	setHeads("TARGET", "REWARD", "STATUS", -70)
+	setHeads("SUSPECT", "REWARD", "STATUS", -70)
 	rows[ROWS]:Hide()
 	rows[ROWS + 1]:Hide()
 	local officer = SG.IsOfficer(SG.myName) == true
@@ -842,10 +846,10 @@ local function refreshRecalls()
 					r.assists:SetText(SG.shortName(c.claimer))
 					r.assists:SetTextColor(unpack(ACCENT))
 					local where = (c.zone and c.zone ~= "") and (" in " .. c.zone) or ""
-					r.tip[#r.tip + 1] = ("Recalled by %s%s, %s"):format(SG.shortName(c.claimer), where, SG.ago(c.t))
+					r.tip[#r.tip + 1] = ("Eliminated by %s%s, %s"):format(SG.shortName(c.claimer), where, SG.ago(c.t))
 				else
 					r.rank:SetText(ICON_CLOSED)
-					r.assists:SetText(state == "cancelled" and "cancelled" or "expired")
+					r.assists:SetText(state == "cancelled" and "withdrawn" or "expired")
 				end
 			end
 		else
@@ -855,14 +859,12 @@ local function refreshRecalls()
 
 	colHeads:SetShown(#list > 0)
 	empty:SetShown(#list == 0)
-	empty:SetText("No Recall Notices.\n\n|cff8c8c94" .. (officer
-		and "Post one below. The first guildmate\nto kill the target claims it.|r"
-		or "Officers post them. The first guildmate\nto kill the target claims it.|r"))
+	empty:SetText("No corporate spies reported.\n\n|cff8c8c94We have a zero tolerance policy for\ncorporate espionage. If you are\nsuspected, it's on sight.|r")
 
 	local open = ns.Bounty.OpenCount()
-	footer:SetText(open == 1 and "1 open notice" or (open .. " open notices"))
+	footer:SetText(open == 1 and "1 spy at large" or (open .. " spies at large"))
 	local mine = ns.Bounty.CompletedBy(SG.myName)
-	footerRight:SetText(mine > 0 and ("You've completed " .. mine) or "")
+	footerRight:SetText(mine > 0 and ("You've eliminated " .. mine) or "")
 end
 
 ---------------------------------------------------------------------------
@@ -914,6 +916,13 @@ function UI.Refresh()
 	end
 	champion = SG.lastWeekWinner()
 	UI.RefreshCrests() -- tabard data can arrive after login
+
+	-- Gnomes harvested by all employees this week (everyone running the addon).
+	local cur, company = SG.weekId(), 0
+	for _, e in pairs(SG.db.players) do
+		company = company + (SG.weekCounts(e, cur))
+	end
+	companyLine:SetText(("Employees harvested |cff%s%d|r gnome%s this week"):format(hex(GOLD), company, company == 1 and "" or "s"))
 	for _, t in ipairs(tabs) do
 		local active = t.key == mode
 		t.label:SetTextColor(unpack(active and TEXT or MUTED))
@@ -1193,7 +1202,7 @@ local function onUnitTooltip(tt, data)
 		if row.state == "open" then
 			local tName = row.b.target:match("^[^%-]+")
 			if tName and short and tName:lower() == short:lower() then
-				tt:AddLine(ICON_OPEN .. " Recall Notice  ·  " .. row.b.reward, RED[1], RED[2], RED[3])
+				tt:AddLine(ICON_OPEN .. " Corporate spy  ·  " .. row.b.reward, RED[1], RED[2], RED[3])
 				break
 			end
 		end
@@ -1340,7 +1349,7 @@ function SmokingGnomes_OnAddonCompartmentEnter(_, button)
 	GameTooltip:AddLine(("%s  ·  %d this week"):format(SG.jobTitle(SG.myName, e.total), e.week), ACCENT[1], ACCENT[2], ACCENT[3])
 	local open = ns.Bounty.OpenCount()
 	if open > 0 then
-		GameTooltip:AddLine(("%d open Recall Notice%s"):format(open, open == 1 and "" or "s"), RED[1], RED[2], RED[3])
+		GameTooltip:AddLine(open == 1 and "1 corporate spy at large" or (open .. " corporate spies at large"), RED[1], RED[2], RED[3])
 	end
 	if SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) then
 		GameTooltip:AddLine(("Update available: %s"):format(SG.latestRelease), GOLD[1], GOLD[2], GOLD[3])

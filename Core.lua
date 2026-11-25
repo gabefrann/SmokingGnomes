@@ -798,7 +798,7 @@ end
 
 local function printBoard()
 	local rows = SG.ranked("week")
-	SG.print("Weekly yield:")
+	SG.print("This week:")
 	local shown = 0
 	for i, r in ipairs(rows) do
 		if i > 10 or r.kills == 0 then
@@ -818,9 +818,9 @@ local HELP = {
 	"/gnomes status  is it working? kills seen, guildmates heard, version",
 	"/gnomes board  this week's top 10 in chat",
 	"/gnomes standings  the login message: top 3 and Employee of the Week",
-	"/gnomes recalls  list open Recall Notices",
-	"/gnomes recall <name> [reward]  officers: post a Recall Notice (or target the player)",
-	"/gnomes recall cancel <name>  officers: cancel your notice",
+	"/gnomes spies  list suspected corporate spies",
+	"/gnomes spy <name> [reward]  officers: report a corporate spy (or target the player)",
+	"/gnomes spy cancel <name>  officers: withdraw your report",
 	"/gnomes toast  turn the kill popup on or off",
 	"/gnomes minimap  hide or show the minimap button",
 	"/gnomes gank  gank mode: call out gnomes you see and list them; click a name to target it",
@@ -921,7 +921,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "sync" then
 		ns.Sync.Hello()
 		SG.print("Asked the guild for numbers.")
-	elseif cmd == "recall" then
+	elseif cmd == "recall" or cmd == "spy" then
 		-- /gnomes recall <name> [reward]   /gnomes recall cancel <name>   (name defaults to your target)
 		local rest = (msg or ""):match("^%s*%S+%s*(.*)$") or ""
 		local cancel = rest:lower():match("^cancel%s") ~= nil or rest:lower() == "cancel"
@@ -940,7 +940,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			end
 		end
 		if not name then
-			SG.print("Usage: /gnomes recall <name> [reward], or target the player first.")
+			SG.print("Usage: /gnomes spy <name> [reward], or target the player first.")
 			return
 		end
 		local ok, err
@@ -952,9 +952,9 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		if not ok then
 			SG.print(err)
 		elseif cancel then
-			SG.print("Recall Notice cancelled.")
+			SG.print("Spy report withdrawn.")
 		end
-	elseif cmd == "recalls" then
+	elseif cmd == "recalls" or cmd == "spies" then
 		local list = ns.Bounty.List()
 		local shown = 0
 		for _, row in ipairs(list) do
@@ -963,7 +963,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 				shown = shown + 1
 			end
 		end
-		SG.print(shown == 0 and "No open Recall Notices." or (shown .. " open Recall Notice(s)."))
+		SG.print(shown == 0 and "No corporate spies at large." or (shown .. " corporate spy report(s) open."))
 	elseif cmd == "check" then
 		-- Self-test of the signing: a round trip must pass, any edit must fail.
 		local sample = { total = 12, week = 3, weekId = SG.weekId(), assists = 4, wa = 1, lastKill = SG.now(), u = SG.now(), class = "PRIEST", lastVictim = "Fizzwick" }
@@ -979,7 +979,7 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		SG.print(pass and "Check passed: signing works and your saved numbers are intact."
 			or ("Check FAILED (roundtrip=%s edited=%s othername=%s own=%s recalls=%s)"):format(tostring(roundTrip ~= nil), tostring(edited ~= nil), tostring(otherName ~= nil), tostring(ownOk), tostring(recallsOk)))
 		local officer = SG.IsOfficer(SG.myName)
-		SG.print("Recall Notices: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " post them.")
+		SG.print("Corporate spies: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " report them.")
 	elseif cmd == "test" and (msg or ""):lower():find("gank", 1, true) then
 		if not SG.db.settings.gank then
 			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")

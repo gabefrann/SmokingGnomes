@@ -277,7 +277,7 @@ function Bounty.Post(target, reward)
 	if officer == nil then
 		return false, "The guild roster hasn't loaded yet. Try again in a moment."
 	elseif not officer then
-		return false, "Only officers can post Recall Notices."
+		return false, "Only officers can report corporate spies."
 	end
 	target = trim(target):gsub("%s+", "")
 	if #target < 2 or #target > 40 then
@@ -285,7 +285,7 @@ function Bounty.Post(target, reward)
 	end
 	target = target:sub(1, 1):upper() .. target:sub(2)
 	if findOpen(target) then
-		return false, "There's already an open Recall Notice on " .. target .. "."
+		return false, "There's already a spy report on " .. target .. "."
 	end
 	reward = trim(reward)
 	if reward == "" then
@@ -308,7 +308,7 @@ function Bounty.Post(target, reward)
 	end
 	SG.db.bounties[b.id] = b
 	ns.Sync.Enqueue("bounty", b.id, true, true)
-	ns.UI.Notice("Recall Notice: " .. target, "red", "Reward: " .. reward, "Posted to the guild. Expires in 7 days.")
+	ns.UI.Notice("Corporate spy: " .. target, "red", "Reward: " .. reward, "Reported to the guild. Zero tolerance: it's on sight.")
 	ns.UI.Refresh()
 	return true
 end
@@ -316,7 +316,7 @@ end
 function Bounty.Cancel(target)
 	local b = findOpen(trim(target):gsub("%s+", ""), SG.myName)
 	if not b then
-		return false, "You have no open Recall Notice on that player."
+		return false, "You haven't reported that player as a spy."
 	end
 	b.status, b.u = "cancelled", SG.now()
 	seal(b, BFIELDS, "B")
@@ -358,9 +358,9 @@ function Bounty.OnKill(guid, name, realm, zone, kind)
 			if better(c, claims[id]) then
 				claims[id] = c
 				ns.Sync.Enqueue("claim", id, true, true)
-				ns.UI.Notice("Recall complete!", "gold", name .. "  ·  Reward: " .. b.reward,
+				ns.UI.Notice("Spy eliminated!", "gold", name .. "  ·  Reward: " .. b.reward,
 					"Collect from " .. SG.shortName(b.poster) .. ".")
-				SG.print(("You completed the Recall Notice on %s. Collect %s from %s."):format(name, b.reward, SG.shortName(b.poster)))
+				SG.print(("You eliminated corporate spy %s. Collect %s from %s."):format(name, b.reward, SG.shortName(b.poster)))
 			end
 		end
 	end
@@ -390,12 +390,12 @@ function Bounty.Receive(raw, sig, sender)
 	local fresh = SG.now() - b.u < NEWS_WINDOW
 	if b.status == "open" and not old and SG.now() < b.expires then
 		if fresh then
-			ns.UI.Notice("Recall Notice: " .. b.target, "red", "Reward: " .. b.reward,
-				"Posted by " .. SG.shortName(b.poster) .. ".")
-			SG.print(("New Recall Notice: %s. Reward: %s. Posted by %s."):format(b.target, b.reward, SG.shortName(b.poster)))
+			ns.UI.Notice("Corporate spy: " .. b.target, "red", "Reward: " .. b.reward,
+				"Reported by " .. SG.shortName(b.poster) .. ". It's on sight.")
+			SG.print(("Corporate spy reported: %s. Reward: %s. Reported by %s. It's on sight."):format(b.target, b.reward, SG.shortName(b.poster)))
 		end
 	elseif b.status == "cancelled" and old and old.status == "open" and fresh then
-		SG.print(("The Recall Notice on %s was cancelled."):format(b.target))
+		SG.print(("The spy report on %s was withdrawn."):format(b.target))
 	end
 	ns.UI.Refresh()
 end
@@ -426,9 +426,9 @@ function Bounty.ReceiveClaim(raw, sig, sender)
 	claims[c.id] = c
 
 	if b and not hadClaim and c.claimer ~= SG.myName and SG.now() - c.t < NEWS_WINDOW then
-		ns.UI.Notice("Recall complete", "gold", SG.shortName(c.claimer) .. " recalled " .. b.target,
+		ns.UI.Notice("Spy eliminated", "gold", SG.shortName(c.claimer) .. " took out " .. b.target,
 			"Reward: " .. b.reward .. ".")
-		SG.print(("%s completed the Recall Notice on %s (%s)."):format(SG.shortName(c.claimer), b.target, b.reward))
+		SG.print(("%s eliminated corporate spy %s (%s)."):format(SG.shortName(c.claimer), b.target, b.reward))
 	end
 	ns.UI.Refresh()
 end
@@ -468,7 +468,7 @@ function Bounty.Load()
 	C_Timer.After(30, function()
 		local n = Bounty.OpenCount()
 		if n > 0 then
-			SG.print(("%d open Recall Notice%s. Type /gnomes to see them."):format(n, n == 1 and "" or "s"))
+			SG.print((n == 1 and "1 corporate spy at large." or (n .. " corporate spies at large.")) .. " Type /gnomes to see them.")
 		end
 	end)
 end

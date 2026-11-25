@@ -163,7 +163,7 @@ end
 
 local function callout(s, bounty)
 	if bounty then
-		ns.UI.Notice("Recall target spotted: " .. s.name, "red", details(s), "Reward: " .. bounty.reward)
+		ns.UI.Notice("Corporate spy spotted: " .. s.name, "red", details(s), "Reward: " .. bounty.reward .. ". It's on sight.")
 	else
 		local v = ns.Ledger.Victim(s.name)
 		local note = (v and v.n > 0) and ("Smoked %d× before."):format(v.n) or "No record with the company yet."

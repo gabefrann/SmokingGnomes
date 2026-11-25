@@ -1,6 +1,6 @@
-﻿# Smoking Gnomes Inc.
+# Smoking Gnomes Inc.
 
-The guild's gnome-harvesting Production Report: a leaderboard for gnomes killed in world PvP, plus Recall Notices (bounties) posted by officers.
+The guild's gnome-harvesting Production Report: a leaderboard for gnomes killed in world PvP, plus Corporate Spies (bounties) reported by officers.
 
 ## Install (guild members)
 **With WowUp (recommended, updates itself):**
@@ -28,14 +28,14 @@ Your title is based on lifetime gnomes. It shows on the Production Report, and i
 
 Last week's top harvester is **Employee of the Week** for the following week. They get a star on the board and a line in their tooltip.
 
-## Recall Notices (bounties)
+## Corporate Spies (bounties)
 - **Who can post:** the guild master and the rank directly below (guild rank index 0 and 1). To change this, edit `OFFICER_RANK` at the top of `Bounty.lua`.
-- **How to post:** use the **Recalls** tab: type a name (or leave it empty to use your current target), add a reward, then click **Post**. Or type `/gnomes recall Fizzwick 50 gold`.
+- **How to report one:** use the **Spies** tab: type a name (or leave it empty to use your current target), add a reward, then click **Report**. Or type `/gnomes spy Fizzwick 50 gold`.
 - **Who it can target:** any player, not just gnomes. Use `Name-Realm` for players from another realm.
 - **Claiming:** the first guildmate to land the killing blow (or whose pet does) in the open world claims it automatically. If two claims arrive, the earlier kill wins. The addon checks that the claimed kill really was the named player whenever it can.
 - **Rewards:** the officer pays these by hand. The addon only records who earned what.
-- **Expiry:** notices expire after 7 days. The officer who posted one can cancel it with shift + right-click on the Recalls tab, or `/gnomes recall cancel Fizzwick`.
-- **What everyone sees:** a popup when a notice is posted or claimed, a red "Recall Notice" line when hovering the target in the world, and "Recalls completed" in each player's tooltip on the board.
+- **Expiry:** reports expire after 7 days. The officer who reported a spy can withdraw it with shift + right-click on the Spies tab, or `/gnomes spy cancel Fizzwick`.
+- **What everyone sees:** a popup when a spy is reported or eliminated, a red "Corporate spy" line when hovering them in the world, and "Spies eliminated" in each player's tooltip on the board.
 - Notices and claims are signed and relayed the same way as kill counts, so people who were offline still get them.
 
 ## Repeat customers
@@ -50,7 +50,7 @@ The window and popups use the logo file. `/gnomes crest` shows what the game its
 
 ## Gank mode
 Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings view, or a key (Key Bindings â†’ Smoking Gnomes Inc.).
-- Enemy gnomes you see (nameplates, mouseover or target) get a **"Gnome spotted"** popup with a short ping, plus how often the company has smoked them. Recall Notice targets of any race get a red **"Recall target spotted"**.
+- Enemy gnomes you see (nameplates, mouseover or target) get a **"Gnome spotted"** popup with a short ping, plus how often the company has smoked them. Corporate spies of any race get a red **"Corporate spy spotted"**.
 - A small panel lists everyone spotted in the last 3 minutes. **Click a name to target that player.** The **"Target the last spotted gnome"** key binding does the same.
 - Each player is called out at most once every 3 minutes. Battlegrounds and arenas are ignored.
 - Targeting always needs your click or key press. Addons can't choose a target by themselves, the same as Next!. The list can't change during combat, so it updates when the fight ends.
@@ -85,9 +85,9 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70�
 | `/gnomes status` | Check it's working: kills seen this session, guildmates with the addon heard from, version |
 | `/gnomes board` | Print this week's top 10 in chat |
 | `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
-| `/gnomes recalls` | List open Recall Notices in chat |
-| `/gnomes recall <name> [reward]` | Officers: post a Recall Notice (leave the name out to use your target) |
-| `/gnomes recall cancel <name>` | Officers: cancel your notice |
+| `/gnomes spies` | List suspected corporate spies in chat |
+| `/gnomes spy <name> [reward]` | Officers: report a corporate spy (leave the name out to use your target) |
+| `/gnomes spy cancel <name>` | Officers: withdraw your report |
 | `/gnomes toast` | Turn popups on or off |
 | `/gnomes gank` | Gank mode on or off |
 | `/gnomes settings` | Window size, background opacity and switches |
@@ -117,4 +117,4 @@ Keep `## Version: @project-version@` in the `.toc`; the release build fills it i
 4. With two guild members online who both have the addon: each should appear on the other's board within about 20 seconds of logging in.
 5. Relay: player A kills a gnome while player B is online and player C is offline. When C logs in, A's kill should appear on C's board even if A has logged off.
 6. Kill a real gnome in the open world. Check the popup, the board, and that a guildmate sees your new count.
-7. Recall Notices: an officer posts one. A guildmate online should get the popup and see it on the **Recalls** tab. Kill the target and check that both of you see it as claimed.
+7. Corporate spies: an officer reports one. A guildmate online should get the popup and see it on the **Spies** tab. Kill the spy and check that both of you see it as eliminated.
