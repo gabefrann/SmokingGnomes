@@ -192,6 +192,22 @@ function Ledger.Load()
 	SG.db.kills = SG.db.kills or {}
 	SG.db.victims = SG.db.victims or {}
 	SG.db.counted = SG.db.counted or {} -- id -> time, so a record is never counted twice
+	-- Tallies saved before 0.14 are keyed by first name ("little"); re-key them by full name.
+	for key, v in pairs(SG.db.victims) do
+		local want = v.name and Ledger.Key(v.name)
+		if want and want ~= key then
+			local existing = SG.db.victims[want]
+			if existing then
+				existing.n = existing.n + v.n
+				for killer, n in pairs(v.by or {}) do
+					existing.by[killer] = (existing.by[killer] or 0) + n
+				end
+			else
+				SG.db.victims[want] = v
+			end
+			SG.db.victims[key] = nil
+		end
+	end
 	local now = SG.now()
 	for id, stored in pairs(SG.db.kills) do
 		local k = decode(stored.raw, stored.sig)
