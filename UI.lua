@@ -1071,18 +1071,29 @@ local function buildMinimapButton()
 	b:RegisterForDrag("LeftButton")
 	b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
+	-- Same geometry as LibDBIcon: the modern client centres everything in a 50px ring,
+	-- the Classic client uses offsets in a 53px ring.
+	local modern = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
-	bg:SetSize(20, 20)
-	bg:SetPoint("TOPLEFT", 7, -5)
 	local icon = b:CreateTexture(nil, "ARTWORK")
 	icon:SetTexture(LOGO)
-	icon:SetSize(19, 19)
-	icon:SetPoint("TOPLEFT", 6, -6)
 	local border = b:CreateTexture(nil, "OVERLAY")
 	border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-	border:SetSize(53, 53)
 	border:SetPoint("TOPLEFT")
+	if modern then
+		border:SetSize(50, 50)
+		bg:SetSize(24, 24)
+		bg:SetPoint("CENTER")
+		icon:SetSize(21, 21)
+		icon:SetPoint("CENTER")
+	else
+		border:SetSize(53, 53)
+		bg:SetSize(20, 20)
+		bg:SetPoint("TOPLEFT", 7, -5)
+		icon:SetSize(19, 19)
+		icon:SetPoint("TOPLEFT", 6, -6)
+	end
 
 	b:SetScript("OnClick", function(_, button)
 		if button == "RightButton" then
