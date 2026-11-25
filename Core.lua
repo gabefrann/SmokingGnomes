@@ -1099,7 +1099,14 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		if not SG.db.settings.gank then
 			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")
 		end
-		ns.Gank.Spot("Testgnome", "MAGE", 51, nil)
+		ns.Gank.Spot("Testgnome", "MAGE", 51, nil, nil, { test = true })
+	elseif cmd == "test" and (msg or ""):lower():find("spot", 1, true) then
+		-- What a guildmate's spot looks like on the panel (nothing is sent).
+		if not SG.db.settings.gank then
+			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")
+		end
+		local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+		ns.Gank.Remote("Molly", "Testgnome Spotted", "ROGUE", 44, ok and map or 0)
 	elseif cmd == "test" then
 		local info = { victim = "Test Gnome", zone = zoneName(), test = true }
 		if (msg or ""):lower():find("promo", 1, true) then

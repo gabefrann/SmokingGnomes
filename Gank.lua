@@ -6,6 +6,8 @@
 -- one. Targeting always needs your click or key press: addons can't pick a target on
 -- their own, so this works like Next!, with secure buttons running /targetexact.
 -- Secure buttons can only be changed outside combat, so the list freezes during a fight.
+-- Also listed, quietly: gnomes a groupmate has targeted, and gnomes guildmates on the
+-- same map spotted (shared over the guild addon channel).
 
 local _, ns = ...
 local SG = ns.SG
@@ -15,6 +17,9 @@ ns.Gank = Gank
 
 local CALLOUT_EVERY = 180 -- seconds between callouts for the same player
 local KEEP = 180          -- seconds a spotted player stays on the list
+local SHARE_EVERY = 120   -- seconds between telling the guild about the same gnome
+local GROUP_COLOR = "66bbff" -- a groupmate's target
+local SEEN_COLOR = "d9b35c"  -- spotted by a guildmate in my zone
 local ROWS = 5         -- rows shown at the default size
 local MAX_ROWS = 12    -- rows available when the panel is resized taller
 local ROW_H = 20
@@ -196,7 +201,94 @@ local function isDead(unit)
 	return ok and plain(dead) == true
 end
 
-function Gank.Spot(name, class, level, bounty, unit)
+-- A groupmate still has them targeted.
+local function groupTarget(s)
+	if s.byUnit and isUnit(s.byUnit, s.name) then
+		s.t = GetTime()
+		return true
+	end
+	s.byUnit = nil
+	return false
+end
+
+-- The map I'm on, used to keep guildmates' spots to my zone.
+local function myMap()
+	local ok, map = pcall(C_Map.GetBestMapForUnit, "player")
+	return ok and SG.num(map) or nil
+end
+
+local function inBattle()
+	local ok, _, kind = pcall(IsInInstance)
+	kind = ok and SG.str(kind)
+	return kind == "pvp" or kind == "arena"
+end
+
+-- First word of a name, at most 7 letters, for the narrow status column.
+local function short(name)
+	local first = (name or ""):match("^%S+") or ""
+	return #first > 7 and first:sub(1, 7) or first
+end
+
+local function ago(seconds)
+	seconds = math.max(0, math.floor(seconds))
+	return seconds < 60 and (seconds .. "s") or (math.floor(seconds / 60) .. "m")
+end
+
+-- Seen by a guildmate more recently than by me.
+local function guildSpot(s)
+	return s.seenBy and (not s.mine or s.seenAt > s.mine)
+end
+
+-- The status column: level, then near / dead / a groupmate's target / a guildmate's
+-- spot / time since I last saw them.
+function Gank.Status(s)
+	local lvl = s.level and s.level > 0 and (s.level .. "  ") or ""
+	local unit = inView(s)
+	if unit then
+		return lvl .. (isDead(unit) and "|cff8c8c94dead|r" or "|cff4cb56bnear|r")
+	end
+	if groupTarget(s) then
+		return lvl .. (isDead(s.byUnit) and "|cff8c8c94dead|r" or ("|cff" .. GROUP_COLOR .. short(s.by) .. "|r"))
+	end
+	if guildSpot(s) then
+		return lvl .. "|cff" .. SEEN_COLOR .. short(s.seenBy) .. " " .. ago(GetTime() - s.seenAt) .. "|r"
+	end
+	return lvl .. ago(GetTime() - s.t) .. " ago"
+end
+
+-- Row tooltip: who this is and where the sighting came from.
+function Gank.Tooltip(row)
+	local s = row.spot
+	if not s then
+		return
+	end
+	GameTooltip:SetOwner(row, "ANCHOR_LEFT")
+	GameTooltip:AddLine(s.name, classColor(s.class))
+	local d = details(s)
+	if d ~= "" then
+		GameTooltip:AddLine(d, 1, 1, 1)
+	end
+	if s.recall then
+		GameTooltip:AddLine("Corporate spy. It's on sight.", unpack(RED))
+	end
+	local unit = inView(s)
+	if unit then
+		GameTooltip:AddLine("In view: within nameplate range.", unpack(ACCENT))
+	elseif groupTarget(s) then
+		GameTooltip:AddLine(s.by .. " has them targeted right now.", 0.4, 0.73, 1)
+	elseif guildSpot(s) then
+		GameTooltip:AddLine(("Seen by %s in your zone %s ago."):format(s.seenBy, ago(GetTime() - s.seenAt)), 0.85, 0.7, 0.36)
+	else
+		GameTooltip:AddLine("You last saw them " .. ago(GetTime() - s.t) .. " ago.", unpack(MUTED))
+	end
+	GameTooltip:AddLine("Click to target. Works when they're within about 100 yards.", unpack(MUTED))
+	GameTooltip:Show()
+end
+
+-- opts.member: spotted as this groupmate's target (unit is their "...target" token).
+-- opts.test: a test row; never shared with the guild.
+function Gank.Spot(name, class, level, bounty, unit, opts)
+	opts = opts or {}
 	local now = GetTime()
 	local s = spotted[name]
 	if not s then
@@ -206,26 +298,74 @@ function Gank.Spot(name, class, level, bounty, unit)
 	s.class = class or s.class
 	s.level = level or s.level
 	s.t = now
+	s.recall = bounty ~= nil
+	if opts.member then
+		-- Someone else's target: listed quietly, no popup and no sound.
+		s.by, s.byUnit = opts.member, unit
+		Gank.Refresh()
+		return
+	end
 	if unit and unit:match("^nameplate") then
 		s.unit = unit
 	end
-	s.recall = bounty ~= nil
+	s.mine = now
 	if not s.callout or now - s.callout > CALLOUT_EVERY then
 		s.callout = now
 		callout(s, bounty)
 	end
+	-- Tell guildmates in the same zone (skipped if one of them just did).
+	if not opts.test and (not s.shared or now - s.shared > SHARE_EVERY) and myMap() then
+		s.shared = now
+		ns.Sync.Enqueue("spot", name, true) -- front of the queue: it's only useful right away
+	end
+	Gank.Refresh()
+end
+
+-- The guild message for a gnome I spotted: S|version|name|class|level|map
+function Gank.SpotMessage(name)
+	local s, map = spotted[name], myMap()
+	if not s or not map or not isOn() or inBattle() then
+		return nil
+	end
+	return ("S|%d|%s|%s|%d|%d"):format(SG.VERSION, name, s.class or "", s.level or 0, map)
+end
+
+-- A guildmate spotted a gnome. Listed quietly, and only if they're on my map.
+function Gank.Remote(sender, name, class, level, map)
+	if not isOn() or inBattle() then
+		return
+	end
+	name = SG.fullName(name)
+	if not name or #name > 48 or tonumber(map) ~= myMap() then
+		return
+	end
+	local now = GetTime()
+	local s = spotted[name]
+	if not s then
+		s = { name = name }
+		spotted[name] = s
+	end
+	if class and class:match("^%u+$") then
+		s.class = s.class or class
+	end
+	level = tonumber(level)
+	if level and level > 0 and level < 100 then
+		s.level = s.level or level
+	end
+	s.seenBy, s.seenAt = sender, now
+	s.t = math.max(s.t or 0, now)
+	s.recall = recallFor(name) ~= nil
 	Gank.Refresh()
 end
 
 -- Look at one unit: an enemy player who is a gnome or has an open Recall Notice.
-local function check(unit)
+-- member: the groupmate whose target this unit is (unit = "party1target" and so on).
+local function check(unit, member)
 	if not isOn() then
 		return
 	end
 	-- World PvP only: battlegrounds and arenas would call out a gnome every few seconds.
-	local okI, _, kind = pcall(IsInInstance)
-	kind = okI and SG.str(kind)
-	if kind == "pvp" or kind == "arena" then
+	if inBattle() then
 		return
 	end
 	local okP, isPlayer = pcall(UnitIsPlayer, unit)
@@ -248,7 +388,33 @@ local function check(unit)
 	end
 	local okC, _, class = pcall(UnitClass, unit)
 	local okL, level = pcall(UnitLevel, unit)
-	Gank.Spot(name, okC and SG.str(class) or nil, okL and SG.num(level) or nil, bounty, unit)
+	Gank.Spot(name, okC and SG.str(class) or nil, okL and SG.num(level) or nil, bounty, unit,
+		member and { member = member } or nil)
+end
+
+-- What each groupmate has targeted. The game shares this with every addon; nothing is sent.
+local function checkGroupTarget(member)
+	if not member:match("^party%d$") and not member:match("^raid%d+$") then
+		return
+	end
+	local okMe, isMe = pcall(UnitIsUnit, member, "player")
+	if not okMe or plain(isMe) ~= false then
+		return
+	end
+	local who = SG.unitFullName(member)
+	if who then
+		check(member .. "target", who)
+	end
+end
+
+local function scanGroupTargets()
+	local okR, raid = pcall(IsInRaid)
+	local prefix = okR and plain(raid) == true and "raid" or "party"
+	local okN, n = pcall(GetNumGroupMembers)
+	n = okN and SG.num(n) or 0
+	for i = 1, (prefix == "raid" and n or math.min(n, 4)) do
+		checkGroupTarget(prefix .. i)
+	end
 end
 
 ---------------------------------------------------------------------------
@@ -340,6 +506,10 @@ local function build()
 		r.info = text(r, 11, MUTED, "RIGHT")
 		r.info:SetPoint("RIGHT", -4, 0)
 		r.info:SetWidth(80)
+		r:SetScript("OnEnter", Gank.Tooltip)
+		r:SetScript("OnLeave", function()
+			GameTooltip:Hide()
+		end)
 		r:Hide()
 		rows[i] = r
 	end
@@ -360,20 +530,9 @@ local function build()
 			return
 		end
 		elapsed = 0
-		local now = GetTime()
 		for _, r in ipairs(rows) do
-			local s = r.spot
-			if s then
-				local lvl = s.level and s.level > 0 and (s.level .. "  ") or ""
-				local unit = inView(s)
-				if unit and isDead(unit) then
-					r.info:SetText(lvl .. "|cff8c8c94dead|r")
-				elseif unit then
-					r.info:SetText(lvl .. "|cff4cb56bnear|r")
-				else
-					local age = math.floor(now - s.t)
-					r.info:SetText(lvl .. (age < 60 and (age .. "s ago") or (math.floor(age / 60) .. "m ago")))
-				end
+			if r.spot then
+				r.info:SetText(Gank.Status(r.spot))
 			end
 		end
 	end)
@@ -444,6 +603,7 @@ function Gank.Refresh()
 	local list = {}
 	for _, s in pairs(spotted) do
 		s.near = inView(s) ~= nil
+		s.grp = not s.near and groupTarget(s)
 	end
 	local now = GetTime()
 	for name, s in pairs(spotted) do
@@ -460,6 +620,9 @@ function Gank.Refresh()
 		end
 		if a.near ~= b.near then
 			return a.near
+		end
+		if a.grp ~= b.grp then
+			return a.grp
 		end
 		return a.t > b.t
 	end)
@@ -540,7 +703,19 @@ function Gank.Init()
 	f:RegisterEvent("PLAYER_TARGET_CHANGED")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	f:RegisterEvent("PLAYER_REGEN_DISABLED")
+	f:RegisterEvent("UNIT_TARGET")
+	f:RegisterEvent("GROUP_ROSTER_UPDATE")
 	f:SetScript("OnEvent", function(_, event, unit)
+		if event == "UNIT_TARGET" then
+			unit = SG.str(unit)
+			if unit then
+				checkGroupTarget(unit)
+			end
+			return
+		elseif event == "GROUP_ROSTER_UPDATE" then
+			scanGroupTargets()
+			return
+		end
 		if event == "PLAYER_REGEN_DISABLED" then
 			-- Combat is starting: let go of a drag or resize while that's still allowed.
 			if hud and hud.busy then
@@ -576,6 +751,9 @@ function Gank.Init()
 	end)
 	-- Drop stale names now and then.
 	C_Timer.NewTicker(15, function()
+		if isOn() then
+			scanGroupTargets()
+		end
 		if isOn() and not InCombatLockdown() then
 			Gank.Refresh()
 		end

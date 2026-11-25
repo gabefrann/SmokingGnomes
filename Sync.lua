@@ -5,6 +5,8 @@
 --   R|version|Name-Realm|<11 fields>|signature  one player's numbers
 --   B|version|<8 fields>|signature              a Recall Notice (bounty), see Bounty.lua
 --   C|version|<6 fields>|signature              a claim on a Recall Notice
+--   S|version|name|class|level|map              a gnome spotted in gank mode (not signed:
+--                                               display only, shown to members on that map)
 -- The owner of a record sends it when it changes. Anyone may relay any record, so news
 -- made while you were offline still reaches you through whoever is online. A record is
 -- only replaced by a newer, valid one.
@@ -56,6 +58,8 @@ local function messageFor(item)
 		return ns.Bounty.ClaimMessage(item.key)
 	elseif item.kind == "kill" then
 		return ns.Ledger.Message(item.key)
+	elseif item.kind == "spot" then
+		return ns.Gank.SpotMessage(item.key)
 	end
 end
 
@@ -66,6 +70,8 @@ local function versionOf(kind, key)
 		return e and e.u or 0
 	elseif kind == "kill" then
 		return SG.db.kills[key] and 1 or 0 -- kill records never change
+	elseif kind == "spot" then
+		return 1 -- a guildmate who just shared the same gnome makes mine unnecessary
 	end
 	return ns.Bounty.Version(kind, key)
 end
@@ -416,6 +422,10 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		ingest(name, raw, p[#p], name == sender)
 	elseif kind == "K" then
 		ns.Ledger.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
+	elseif kind == "S" and #p == 6 then
+		-- S|version|name|class|level|map: a gnome a guildmate just spotted (gank mode)
+		Sync.MarkHeard("spot", p[3], 1)
+		ns.Gank.Remote(sender, p[3], p[4], p[5], p[6])
 	elseif kind == "B" or kind == "C" then
 		-- fields sit between the version and the signature
 		local raw = table.concat(p, "|", 3, #p - 1)
