@@ -84,6 +84,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70Ã
 | `/gnomes stats` | Print your numbers |
 | `/gnomes status` | Check it's working: kills seen this session, guildmates with the addon heard from, version |
 | `/gnomes board` | Print this week's top 10 in chat |
+| `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
 | `/gnomes recalls` | List open Recall Notices in chat |
 | `/gnomes recall <name> [reward]` | Officers: post a Recall Notice (leave the name out to use your target) |
 | `/gnomes recall cancel <name>` | Officers: cancel your notice |

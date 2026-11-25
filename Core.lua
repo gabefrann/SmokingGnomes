@@ -765,6 +765,37 @@ local function scanRoster()
 	ns.Bounty.OnRoster()
 end
 
+-- Shown once at login, after guildmates' numbers have had time to sync:
+-- this week's top 3, your own place if you're outside it, and the Employee of the Week.
+function SG.loginStandings()
+	if SG.db.settings.loginStandings == false then
+		return
+	end
+	local rows = SG.ranked("week")
+	local top, myRank, mine = {}, nil, nil
+	for i, r in ipairs(rows) do
+		if r.kills > 0 and #top < 3 then
+			top[#top + 1] = ("%d. %s %d"):format(i, SG.shortName(r.name), r.kills)
+		end
+		if r.name == SG.myName then
+			myRank, mine = i, r.kills
+		end
+	end
+	local gold = "|cffffd14d"
+	if #top == 0 then
+		SG.print("No gnomes harvested yet this week. First one sets the pace.")
+	else
+		SG.print("This week's top harvesters: " .. gold .. table.concat(top, "  ·  ") .. "|r")
+		if myRank and myRank > 3 and mine > 0 then
+			print(("  You: #%d with %d."):format(myRank, mine))
+		end
+	end
+	local champ, n = SG.lastWeekWinner()
+	if champ then
+		print(("  Employee of the Week: %s%s|r (%d last week)"):format(gold, SG.shortName(champ), n))
+	end
+end
+
 local function printBoard()
 	local rows = SG.ranked("week")
 	SG.print("Weekly yield:")
@@ -786,6 +817,7 @@ local HELP = {
 	"/gnomes stats  your job title and numbers",
 	"/gnomes status  is it working? kills seen, guildmates heard, version",
 	"/gnomes board  this week's top 10 in chat",
+	"/gnomes standings  the login message: top 3 and Employee of the Week",
 	"/gnomes recalls  list open Recall Notices",
 	"/gnomes recall <name> [reward]  officers: post a Recall Notice (or target the player)",
 	"/gnomes recall cancel <name>  officers: cancel your notice",
@@ -821,6 +853,11 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		end
 	elseif cmd == "board" then
 		printBoard()
+	elseif cmd == "standings" then
+		local was = SG.db.settings.loginStandings
+		SG.db.settings.loginStandings = true
+		SG.loginStandings()
+		SG.db.settings.loginStandings = was
 	elseif cmd == "toast" then
 		SG.db.settings.toast = not SG.db.settings.toast
 		SG.print("Kill popup " .. (SG.db.settings.toast and "on." or "off."))
@@ -985,6 +1022,7 @@ f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("CHAT_MSG_ADDON")
 f:RegisterEvent("GUILD_ROSTER_UPDATE")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- Helped kills: any death near you plus the honor you get for it. Some of these may
 -- not exist on every client, so they're registered safely.
 for _, e in ipairs({ "ADDON_RESTRICTION_STATE_CHANGED", "UNIT_DIED", "CHAT_MSG_COMBAT_HONOR_GAIN",
@@ -1035,6 +1073,12 @@ f:SetScript("OnEvent", function(_, event, ...)
 	elseif HONOR_EVENTS[event] then
 		if SG.db and SG.myName then
 			onHonor(event, event ~= "PLAYER_PVP_KILLS_CHANGED" and (...) or nil)
+		end
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		-- Standings only on a real login, not on /reload or zoning.
+		local isInitialLogin = ...
+		if isInitialLogin == true and SG.db and SG.myName then
+			C_Timer.After(35, SG.loginStandings)
 		end
 	elseif event == "PLAYER_TARGET_CHANGED" then
 		if SG.db and SG.myName then

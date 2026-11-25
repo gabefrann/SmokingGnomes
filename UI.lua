@@ -429,7 +429,7 @@ local function buildSettings()
 		updaters[#updaters + 1] = function()
 			value:SetText(fmt(get()))
 		end
-		y = y - 40
+		y = y - 34
 	end
 
 	-- On / Off
@@ -446,7 +446,7 @@ local function buildSettings()
 			b.label:SetText(on and "On" or "Off")
 			b.label:SetTextColor(unpack(on and ACCENT or MUTED))
 		end
-		y = y - 40
+		y = y - 34
 	end
 
 	-- A button showing the current choice; clicking steps to the next one.
@@ -463,7 +463,7 @@ local function buildSettings()
 			b.label:SetText(v)
 			b.label:SetTextColor(unpack(v == "Off" and MUTED or ACCENT))
 		end
-		y = y - 40
+		y = y - 34
 	end
 
 	local s = function() return SG.db.settings end
@@ -479,6 +479,8 @@ local function buildSettings()
 		function() return (ns.Gank.SoundChoice()).label end, function() ns.Gank.CycleSound() end)
 	toggle("Popups", "Kills, promotions and callouts",
 		function() return s().toast ~= false end, function(v) s().toast = v end)
+	toggle("Login standings", "Top 3 in chat when you log in",
+		function() return s().loginStandings ~= false end, function(v) s().loginStandings = v end)
 	toggle("Minimap button", nil,
 		function() return not (s().minimap and s().minimap.hide) end, function(v) UI.SetMinimap(v) end)
 
