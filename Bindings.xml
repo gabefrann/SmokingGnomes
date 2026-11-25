@@ -1,0 +1,4 @@
+<Bindings>
+	<Binding name="CLICK SmokingGnomesTargetGnome:LeftButton" header="SMOKINGGNOMES" category="Smoking Gnomes Inc." />
+	<Binding name="SMOKINGGNOMES_GANK" category="Smoking Gnomes Inc.">SmokingGnomes_ToggleGank()</Binding>
+</Bindings>

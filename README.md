@@ -48,6 +48,16 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 ## Guild crest
 The window and popups use the logo file. `/gnomes crest` shows what the game itself gives for the guild's tabard emblem, large, and prints its file number and colours, which is what the logo is rebuilt from. `/gnomes crest on` tries drawing that live crest in the window instead, and `/gnomes crest off` switches back.
 
+## Gank mode
+Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings view, or a key (Key Bindings → Smoking Gnomes Inc.).
+- Enemy gnomes you see (nameplates, mouseover or target) get a **"Gnome spotted"** popup with a short ping, plus how often the company has smoked them. Recall Notice targets of any race get a red **"Recall target spotted"**.
+- A small panel lists everyone spotted in the last 3 minutes. **Click a name to target that player.** The **"Target the last spotted gnome"** key binding does the same.
+- Each player is called out at most once every 3 minutes. Battlegrounds and arenas are ignored.
+- Targeting always needs your click or key press. Addons can't choose a target by themselves, the same as Next!. The list can't change during combat, so it updates when the fight ends.
+
+## Settings
+Click the cog in the window header, or type `/gnomes settings`: window size (70–150%), background opacity, gank mode, callout sound, popups and the minimap button.
+
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
 - **Assist:** a gnome killed by someone in your party or raid. Assists are shown in their own column and are used only to break ties.
@@ -78,6 +88,8 @@ The window and popups use the logo file. `/gnomes crest` shows what the game its
 | `/gnomes recall <name> [reward]` | Officers: post a Recall Notice (leave the name out to use your target) |
 | `/gnomes recall cancel <name>` | Officers: cancel your notice |
 | `/gnomes toast` | Turn popups on or off |
+| `/gnomes gank` | Gank mode on or off |
+| `/gnomes settings` | Window size, background opacity and switches |
 | `/gnomes minimap` | Hide or show the minimap button (left-click opens the window, right-click shows commands, drag to move) |
 | `/gnomes help` | List all commands in chat and open the Commands view. The **?** button in the window does the same |
 | `/gnomes crest` | Show the guild crest large with its exact colours (for screenshots) |

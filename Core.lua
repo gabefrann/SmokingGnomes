@@ -664,6 +664,8 @@ local HELP = {
 	"/gnomes recall cancel <name>  officers: cancel your notice",
 	"/gnomes toast  turn the kill popup on or off",
 	"/gnomes minimap  hide or show the minimap button",
+	"/gnomes gank  gank mode: call out gnomes you see and list them; click a name to target it",
+	"/gnomes settings  window size, background opacity and switches",
 	"/gnomes help  this list, and the Commands view in the window",
 	"/gnomes crest  show the guild crest large, with its colours (for screenshots)",
 	"/gnomes crest on | off  try the live guild crest instead of the logo file, or switch back",
@@ -672,6 +674,7 @@ local HELP = {
 	"/gnomes sync  ask the guild for fresh numbers",
 	"/gnomes test  show a fake kill (doesn't change your numbers)",
 	"/gnomes test promo  show a fake promotion",
+	"/gnomes test gank  show a fake spotted gnome",
 	"/gnomes check  self-test the anti-tamper signing",
 }
 
@@ -802,6 +805,11 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			or ("Check FAILED (roundtrip=%s edited=%s othername=%s own=%s recalls=%s)"):format(tostring(roundTrip ~= nil), tostring(edited ~= nil), tostring(otherName ~= nil), tostring(ownOk), tostring(recallsOk)))
 		local officer = SG.IsOfficer(SG.myName)
 		SG.print("Recall Notices: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " post them.")
+	elseif cmd == "test" and (msg or ""):lower():find("gank", 1, true) then
+		if not SG.db.settings.gank then
+			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")
+		end
+		ns.Gank.Spot("Testgnome", "MAGE", 51, nil)
 	elseif cmd == "test" then
 		local info = { victim = "Test Gnome", zone = zoneName(), test = true }
 		if (msg or ""):lower():find("promo", 1, true) then
@@ -811,6 +819,10 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		SG.recordKill(info)
 	elseif cmd == "minimap" then
 		ns.UI.ToggleMinimap()
+	elseif cmd == "gank" then
+		ns.Gank.Toggle()
+	elseif cmd == "settings" or cmd == "options" or cmd == "config" then
+		ns.UI.ShowView("settings", true)
 	else
 		-- help, ?, or anything unknown: the full list in chat, plus the Commands view.
 		if cmd ~= "help" and cmd ~= "?" then
@@ -859,6 +871,7 @@ f:SetScript("OnEvent", function(_, event, ...)
 		scanRoster()
 		call(C_GuildInfo and C_GuildInfo.GuildRoster) -- ask for a roster update (CEO and officers)
 		ns.UI.Init()
+		ns.Gank.Init()
 		ns.Sync.Start()
 		C_Timer.NewTicker(30, function()
 			SG.db.lastOnline = SG.now()

@@ -14,3 +14,4 @@ Sync.lua
 Bounty.lua
 Ledger.lua
 UI.lua
+Gank.lua

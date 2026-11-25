@@ -321,11 +321,11 @@ local HELP = {
 	{ "/gnomes stats", "Your title and numbers" },
 	{ "/gnomes status", "Check it's working" },
 	{ "/gnomes board", "Top 10 in chat" },
+	{ "/gnomes gank", "Gank mode on or off" },
+	{ "/gnomes settings", "Size, opacity, switches" },
 	{ "/gnomes recalls", "List open notices" },
 	{ "/gnomes recall Name 50g", "Post one (officers)" },
 	{ "/gnomes recall cancel Name", "Cancel yours" },
-	{ "/gnomes toast", "Popups on or off" },
-	{ "/gnomes minimap", "Minimap button on/off" },
 	{ "/gnomes sync", "Refresh from guild" },
 	{ "/gnomes version", "Check for updates" },
 	{ "/gnomes test", "Preview the kill popup" },
@@ -349,6 +349,128 @@ local function buildHelp()
 		desc:SetText(row[2])
 	end
 	helpPanel:Hide()
+end
+
+---------------------------------------------------------------------------
+-- Settings view
+---------------------------------------------------------------------------
+
+local settingsPanel
+
+-- Window size and background opacity, for this window and the gank panel.
+function UI.ApplyLook()
+	if not frame then
+		return
+	end
+	local s = SG.db.settings
+	frame:SetScale(s.scale or 1)
+	frame:SetBackdropColor(0.06, 0.06, 0.07, s.opacity or 0.98)
+	if ns.Gank and ns.Gank.ApplyLook then
+		ns.Gank.ApplyLook()
+	end
+end
+
+local function flatButton(parent, w, label)
+	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
+	b:SetSize(w, 20)
+	b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+	b:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.25)
+	b:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
+	b.label = text(b, 11, TEXT, "CENTER")
+	b.label:SetPoint("CENTER")
+	b.label:SetText(label)
+	b:SetScript("OnEnter", function(self)
+		self:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.6)
+	end)
+	b:SetScript("OnLeave", function(self)
+		self:SetBackdropColor(BORDER[1], BORDER[2], BORDER[3], 0.25)
+	end)
+	return b
+end
+
+local function buildSettings()
+	settingsPanel = CreateFrame("Frame", nil, frame)
+	settingsPanel:SetPoint("TOPLEFT", PAD, -94)
+	settingsPanel:SetPoint("BOTTOMRIGHT", -PAD, 40)
+	local width = W - PAD * 2
+	local y = 0
+	local updaters = {}
+
+	local function label(title, note)
+		local l = text(settingsPanel, 12, TEXT)
+		l:SetPoint("TOPLEFT", 0, y)
+		l:SetText(title)
+		if note then
+			local n = text(settingsPanel, 10, MUTED)
+			n:SetPoint("TOPLEFT", 0, y - 15)
+			n:SetWidth(150)
+			n:SetText(note)
+		end
+	end
+
+	-- [-] value [+]
+	local function stepper(title, note, get, set, step, min, max, fmt)
+		label(title, note)
+		local value = text(settingsPanel, 12, TEXT, "CENTER")
+		local plus = flatButton(settingsPanel, 22, "+")
+		plus:SetPoint("TOPRIGHT", 0, y + 2)
+		value:SetPoint("RIGHT", plus, "LEFT", -4, 0)
+		value:SetWidth(42)
+		local minus = flatButton(settingsPanel, 22, "-")
+		minus:SetPoint("RIGHT", value, "LEFT", -4, 0)
+		local function change(delta)
+			local v = math.floor((get() + delta) * 100 + 0.5) / 100
+			set(math.max(min, math.min(max, v)))
+			UI.ApplyLook()
+			UI.Refresh()
+		end
+		minus:SetScript("OnClick", function() change(-step) end)
+		plus:SetScript("OnClick", function() change(step) end)
+		updaters[#updaters + 1] = function()
+			value:SetText(fmt(get()))
+		end
+		y = y - 40
+	end
+
+	-- On / Off
+	local function toggle(title, note, get, set)
+		label(title, note)
+		local b = flatButton(settingsPanel, 50, "")
+		b:SetPoint("TOPRIGHT", 0, y + 2)
+		b:SetScript("OnClick", function()
+			set(not get())
+			UI.Refresh()
+		end)
+		updaters[#updaters + 1] = function()
+			local on = get()
+			b.label:SetText(on and "On" or "Off")
+			b.label:SetTextColor(unpack(on and ACCENT or MUTED))
+		end
+		y = y - 40
+	end
+
+	local s = function() return SG.db.settings end
+	local pct = function(v) return math.floor(v * 100 + 0.5) .. "%" end
+
+	stepper("Window size", "This window and the gank panel",
+		function() return s().scale or 1 end, function(v) s().scale = v end, 0.1, 0.7, 1.5, pct)
+	stepper("Background opacity", "Text stays fully visible",
+		function() return s().opacity or 0.98 end, function(v) s().opacity = v end, 0.1, 0, 1, pct)
+	toggle("Gank mode", "Call out gnomes, click to target",
+		function() return s().gank == true end, function(v) ns.Gank.Toggle(v) end)
+	toggle("Callout sound", "A ping when a gnome is spotted",
+		function() return s().gankSound ~= false end, function(v) s().gankSound = v end)
+	toggle("Popups", "Kills, promotions and callouts",
+		function() return s().toast ~= false end, function(v) s().toast = v end)
+	toggle("Minimap button", nil,
+		function() return not (s().minimap and s().minimap.hide) end, function(v) UI.SetMinimap(v) end)
+
+	settingsPanel.update = function()
+		for _, fn in ipairs(updaters) do
+			fn()
+		end
+	end
+	settingsPanel:Hide()
 end
 
 local function buildForm()
@@ -449,7 +571,7 @@ local function build()
 	helpBtn.q:SetPoint("CENTER")
 	helpBtn.q:SetText("?")
 	helpBtn:SetScript("OnClick", function()
-		UI.ShowHelp(mode ~= "help")
+		UI.ShowView("help", mode ~= "help")
 	end)
 	helpBtn:SetScript("OnEnter", function(self)
 		self.q:SetTextColor(unpack(TEXT))
@@ -462,6 +584,30 @@ local function build()
 		GameTooltip:Hide()
 	end)
 	frame.helpBtn = helpBtn
+
+	-- Cog: the Settings view (size, opacity, gank mode and other switches).
+	local gear = CreateFrame("Button", nil, frame)
+	gear:SetSize(20, 20)
+	gear:SetPoint("RIGHT", helpBtn, "LEFT", -2, 0)
+	gear.icon = gear:CreateTexture(nil, "ARTWORK")
+	gear.icon:SetTexture("Interface\\AddOns\\SmokingGnomes\\Media\\gear")
+	gear.icon:SetSize(13, 13)
+	gear.icon:SetPoint("CENTER")
+	gear.icon:SetVertexColor(unpack(MUTED))
+	gear:SetScript("OnClick", function()
+		UI.ShowView("settings", mode ~= "settings")
+	end)
+	gear:SetScript("OnEnter", function(self)
+		self.icon:SetVertexColor(unpack(TEXT))
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Settings", 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	gear:SetScript("OnLeave", function(self)
+		self.icon:SetVertexColor(unpack(mode == "settings" and ACCENT or MUTED))
+		GameTooltip:Hide()
+	end)
+	frame.gear = gear
 
 	sub = text(frame, 11, MUTED)
 	sub:SetPoint("TOPLEFT", PAD + 40, -31)
@@ -500,6 +646,7 @@ local function build()
 
 	buildForm()
 	buildHelp()
+	buildSettings()
 
 	empty = text(frame, 12, MUTED, "CENTER")
 	empty:SetPoint("TOP", 0, -150)
@@ -770,16 +917,23 @@ function UI.Refresh()
 		sub:SetText("Production Report")
 	end
 
-	local help = mode == "help"
+	local help, settings = mode == "help", mode == "settings"
 	helpPanel:SetShown(help)
+	settingsPanel:SetShown(settings)
 	frame.helpBtn.q:SetTextColor(unpack(help and ACCENT or MUTED))
-	if help then
+	frame.gear.icon:SetVertexColor(unpack(settings and ACCENT or MUTED))
+	if help or settings then
 		for i = 1, ROWS + 1 do
 			rows[i]:Hide()
 		end
 		colHeads:Hide()
 		empty:Hide()
-		footer:SetText("Type /gnomes help for the full list")
+		if settings then
+			settingsPanel.update()
+			footer:SetText("Saved for all your characters")
+		else
+			footer:SetText("Type /gnomes help for the full list")
+		end
 		footerRight:SetText(SG.RELEASE == "dev" and "" or ("v" .. SG.RELEASE))
 	elseif recall then
 		refreshRecalls()
@@ -797,21 +951,26 @@ function UI.Toggle()
 	frame:SetShown(not frame:IsShown())
 end
 
--- Open the window on the Commands view (show = true) or go back to the last tab.
-function UI.ShowHelp(show)
+-- Open the window on the Commands or Settings view (show = true), or go back to the
+-- last tab.
+function UI.ShowView(view, show)
 	if not frame then
 		return
 	end
 	if show then
-		if mode ~= "help" then
+		if mode ~= "help" and mode ~= "settings" then
 			lastMode = mode
 		end
-		mode = "help"
+		mode = view
 	else
 		mode = lastMode or "week"
 	end
 	frame:Show()
 	UI.Refresh()
+end
+
+function UI.ShowHelp(show)
+	UI.ShowView("help", show)
 end
 
 ---------------------------------------------------------------------------
@@ -1096,7 +1255,9 @@ local function buildMinimapButton()
 	end
 
 	b:SetScript("OnClick", function(_, button)
-		if button == "RightButton" then
+		if button == "LeftButton" and IsShiftKeyDown() then
+			ns.Gank.Toggle()
+		elseif button == "RightButton" then
 			UI.ShowHelp(true)
 		else
 			UI.Toggle()
@@ -1117,7 +1278,8 @@ local function buildMinimapButton()
 	end)
 	b:SetScript("OnEnter", function(self)
 		SmokingGnomes_OnAddonCompartmentEnter(nil, self)
-		GameTooltip:AddLine("Right-click for commands. Drag to move.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:AddLine(("Gank mode: %s"):format(SG.db.settings.gank and "on" or "off"), ACCENT[1], ACCENT[2], ACCENT[3])
+		GameTooltip:AddLine("Shift-click: gank mode. Right-click: commands. Drag to move.", MUTED[1], MUTED[2], MUTED[3])
 		GameTooltip:Show()
 	end)
 	b:SetScript("OnLeave", GameTooltip_Hide)
@@ -1127,10 +1289,15 @@ local function buildMinimapButton()
 	b:SetShown(not s.minimap.hide)
 end
 
+function UI.SetMinimap(show)
+	local s = SG.db.settings.minimap
+	s.hide = not show
+	minimapButton:SetShown(show)
+end
+
 function UI.ToggleMinimap()
 	local s = SG.db.settings.minimap
-	s.hide = not s.hide
-	minimapButton:SetShown(not s.hide)
+	UI.SetMinimap(s.hide == true)
 	SG.print(s.hide and "Minimap button hidden. /gnomes minimap brings it back." or "Minimap button shown.")
 end
 
@@ -1139,6 +1306,7 @@ function UI.Init()
 		build()
 		hookTooltips()
 		buildMinimapButton()
+		UI.ApplyLook()
 	end
 end
 
