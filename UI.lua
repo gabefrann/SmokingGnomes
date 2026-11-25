@@ -313,6 +313,42 @@ local function postFromForm()
 	end
 end
 
+-- Commands view: the slash commands people actually use, one line each.
+local HELP = {
+	{ "/gnomes", "Open this window" },
+	{ "/gnomes stats", "Your title and numbers" },
+	{ "/gnomes status", "Check it's working" },
+	{ "/gnomes board", "Top 10 in chat" },
+	{ "/gnomes recalls", "List open notices" },
+	{ "/gnomes recall Name 50g", "Post one (officers)" },
+	{ "/gnomes recall cancel Name", "Cancel yours" },
+	{ "/gnomes toast", "Popups on or off" },
+	{ "/gnomes minimap", "Minimap button on/off" },
+	{ "/gnomes sync", "Refresh from guild" },
+	{ "/gnomes version", "Check for updates" },
+	{ "/gnomes test", "Preview the kill popup" },
+	{ "/gnomes check", "Self-test" },
+}
+local helpPanel, lastMode
+
+local function buildHelp()
+	helpPanel = CreateFrame("Frame", nil, frame)
+	helpPanel:SetPoint("TOPLEFT", PAD, -92)
+	helpPanel:SetPoint("BOTTOMRIGHT", -PAD, 40)
+	for i, row in ipairs(HELP) do
+		local y = -(i - 1) * 17
+		local cmd = text(helpPanel, 11, ACCENT)
+		cmd:SetPoint("TOPLEFT", 0, y)
+		cmd:SetWidth(162)
+		cmd:SetText(row[1])
+		local desc = text(helpPanel, 10, MUTED)
+		desc:SetPoint("TOPLEFT", 166, y - 1)
+		desc:SetPoint("RIGHT", helpPanel, "RIGHT", 0, 0)
+		desc:SetText(row[2])
+	end
+	helpPanel:Hide()
+end
+
 local function buildForm()
 	form = CreateFrame("Frame", nil, frame)
 	form:SetSize(W - PAD * 2, 22)
@@ -403,6 +439,28 @@ local function build()
 		self.x:SetTextColor(unpack(MUTED))
 	end)
 
+	-- "?" toggles the Commands view; clicking it again goes back to the last tab.
+	local helpBtn = CreateFrame("Button", nil, frame)
+	helpBtn:SetSize(20, 20)
+	helpBtn:SetPoint("RIGHT", close, "LEFT", -4, 0)
+	helpBtn.q = text(helpBtn, 13, MUTED, "CENTER")
+	helpBtn.q:SetPoint("CENTER")
+	helpBtn.q:SetText("?")
+	helpBtn:SetScript("OnClick", function()
+		UI.ShowHelp(mode ~= "help")
+	end)
+	helpBtn:SetScript("OnEnter", function(self)
+		self.q:SetTextColor(unpack(TEXT))
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Commands", 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	helpBtn:SetScript("OnLeave", function(self)
+		self.q:SetTextColor(unpack(MUTED))
+		GameTooltip:Hide()
+	end)
+	frame.helpBtn = helpBtn
+
 	sub = text(frame, 11, MUTED)
 	sub:SetPoint("TOPLEFT", PAD + 40, -31)
 	sub:SetPoint("RIGHT", -PAD, 0)
@@ -439,6 +497,7 @@ local function build()
 	end
 
 	buildForm()
+	buildHelp()
 
 	empty = text(frame, 12, MUTED, "CENTER")
 	empty:SetPoint("TOP", 0, -150)
@@ -709,7 +768,18 @@ function UI.Refresh()
 		sub:SetText("Production Report")
 	end
 
-	if recall then
+	local help = mode == "help"
+	helpPanel:SetShown(help)
+	frame.helpBtn.q:SetTextColor(unpack(help and ACCENT or MUTED))
+	if help then
+		for i = 1, ROWS + 1 do
+			rows[i]:Hide()
+		end
+		colHeads:Hide()
+		empty:Hide()
+		footer:SetText("Type /gnomes help for the full list")
+		footerRight:SetText(SG.RELEASE == "dev" and "" or ("v" .. SG.RELEASE))
+	elseif recall then
 		refreshRecalls()
 	elseif mode == "mine" then
 		refreshMine()
@@ -723,6 +793,23 @@ function UI.Toggle()
 		return
 	end
 	frame:SetShown(not frame:IsShown())
+end
+
+-- Open the window on the Commands view (show = true) or go back to the last tab.
+function UI.ShowHelp(show)
+	if not frame then
+		return
+	end
+	if show then
+		if mode ~= "help" then
+			lastMode = mode
+		end
+		mode = "help"
+	else
+		mode = lastMode or "week"
+	end
+	frame:Show()
+	UI.Refresh()
 end
 
 ---------------------------------------------------------------------------
@@ -956,10 +1043,89 @@ end
 -- Init and AddOn compartment
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Minimap button: left-click opens the window, right-click the command list,
+-- drag to move it around the minimap edge.
+---------------------------------------------------------------------------
+
+local minimapButton
+
+local function placeMinimapButton()
+	local s = SG.db.settings.minimap
+	local angle = math.rad(s.angle or 200)
+	local radius = (Minimap:GetWidth() / 2) + 5
+	minimapButton:ClearAllPoints()
+	minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+local function buildMinimapButton()
+	local s = SG.db.settings
+	s.minimap = s.minimap or { angle = 200 }
+	local b = CreateFrame("Button", "SmokingGnomesMinimapButton", Minimap)
+	b:SetSize(31, 31)
+	b:SetFrameStrata("MEDIUM")
+	b:SetFrameLevel(8)
+	b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	b:RegisterForDrag("LeftButton")
+	b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+	local bg = b:CreateTexture(nil, "BACKGROUND")
+	bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+	bg:SetSize(20, 20)
+	bg:SetPoint("TOPLEFT", 7, -5)
+	local icon = b:CreateTexture(nil, "ARTWORK")
+	icon:SetTexture(LOGO)
+	icon:SetSize(19, 19)
+	icon:SetPoint("TOPLEFT", 6, -6)
+	local border = b:CreateTexture(nil, "OVERLAY")
+	border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+	border:SetSize(53, 53)
+	border:SetPoint("TOPLEFT")
+
+	b:SetScript("OnClick", function(_, button)
+		if button == "RightButton" then
+			UI.ShowHelp(true)
+		else
+			UI.Toggle()
+		end
+	end)
+	b:SetScript("OnDragStart", function(self)
+		self:SetScript("OnUpdate", function()
+			local mx, my = Minimap:GetCenter()
+			local cx, cy = GetCursorPosition()
+			local scale = Minimap:GetEffectiveScale()
+			cx, cy = cx / scale, cy / scale
+			SG.db.settings.minimap.angle = math.deg(math.atan2(cy - my, cx - mx))
+			placeMinimapButton()
+		end)
+	end)
+	b:SetScript("OnDragStop", function(self)
+		self:SetScript("OnUpdate", nil)
+	end)
+	b:SetScript("OnEnter", function(self)
+		SmokingGnomes_OnAddonCompartmentEnter(nil, self)
+		GameTooltip:AddLine("Right-click for commands. Drag to move.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:Show()
+	end)
+	b:SetScript("OnLeave", GameTooltip_Hide)
+
+	minimapButton = b
+	placeMinimapButton()
+	b:SetShown(not s.minimap.hide)
+end
+
+function UI.ToggleMinimap()
+	local s = SG.db.settings.minimap
+	s.hide = not s.hide
+	minimapButton:SetShown(not s.hide)
+	SG.print(s.hide and "Minimap button hidden. /gnomes minimap brings it back." or "Minimap button shown.")
+end
+
 function UI.Init()
 	if not frame then
 		build()
 		hookTooltips()
+		buildMinimapButton()
 	end
 end
 

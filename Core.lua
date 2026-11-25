@@ -663,6 +663,8 @@ local HELP = {
 	"/gnomes recall <name> [reward]  officers: post a Recall Notice (or target the player)",
 	"/gnomes recall cancel <name>  officers: cancel your notice",
 	"/gnomes toast  turn the kill popup on or off",
+	"/gnomes minimap  hide or show the minimap button",
+	"/gnomes help  this list, and the Commands view in the window",
 	"/gnomes crest  show the guild crest large, with its colours (for screenshots)",
 	"/gnomes crest on | off  try the live guild crest instead of the logo file, or switch back",
 	"/gnomes tipdebug  print what the tooltip hook sees for the next 5 players you hover",
@@ -807,10 +809,17 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			info.promoted = nextTitle or "Chief Medical Officer"
 		end
 		SG.recordKill(info)
+	elseif cmd == "minimap" then
+		ns.UI.ToggleMinimap()
 	else
+		-- help, ?, or anything unknown: the full list in chat, plus the Commands view.
+		if cmd ~= "help" and cmd ~= "?" then
+			SG.print(("Unknown command \"%s\". Here's the list:"):format(cmd))
+		end
 		for _, line in ipairs(HELP) do
 			print(line)
 		end
+		ns.UI.ShowHelp(true)
 	end
 end
 

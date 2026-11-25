@@ -78,6 +78,8 @@ The window and popups use the logo file. `/gnomes crest` shows what the game its
 | `/gnomes recall <name> [reward]` | Officers: post a Recall Notice (leave the name out to use your target) |
 | `/gnomes recall cancel <name>` | Officers: cancel your notice |
 | `/gnomes toast` | Turn popups on or off |
+| `/gnomes minimap` | Hide or show the minimap button (left-click opens the window, right-click shows commands, drag to move) |
+| `/gnomes help` | List all commands in chat and open the Commands view. The **?** button in the window does the same |
 | `/gnomes crest` | Show the guild crest large with its exact colours (for screenshots) |
 | `/gnomes crest on` / `off` | Try the live guild crest instead of the logo file, or switch back |
 | `/gnomes tipdebug` | Print what the tooltip hook sees for the next 5 players you hover |
