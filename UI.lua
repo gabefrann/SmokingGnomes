@@ -430,7 +430,7 @@ local function buildSettings()
 		updaters[#updaters + 1] = function()
 			value:SetText(fmt(get()))
 		end
-		y = y - 34
+		y = y - 31 -- 8 settings fit the window
 	end
 
 	-- On / Off
@@ -447,7 +447,7 @@ local function buildSettings()
 			b.label:SetText(on and "On" or "Off")
 			b.label:SetTextColor(unpack(on and ACCENT or MUTED))
 		end
-		y = y - 34
+		y = y - 31 -- 8 settings fit the window
 	end
 
 	-- A button showing the current choice; clicking steps to the next one.
@@ -464,7 +464,7 @@ local function buildSettings()
 			b.label:SetText(v)
 			b.label:SetTextColor(unpack(v == "Off" and MUTED or ACCENT))
 		end
-		y = y - 34
+		y = y - 31 -- 8 settings fit the window
 	end
 
 	local s = function() return SG.db.settings end
@@ -476,6 +476,8 @@ local function buildSettings()
 		function() return s().opacity or 0.98 end, function(v) s().opacity = v end, 0.1, 0, 1, pct)
 	toggle("Gank mode", "Call out gnomes, click to target",
 		function() return s().gank == true end, function(v) ns.Gank.Toggle(v) end)
+	toggle("Guild spots", "Gnomes guildmates here spot",
+		function() return s().gankGuild ~= false end, function(v) ns.Gank.SetGuildSpots(v) end)
 	cycler("Callout sound", "Click to hear the next one",
 		function() return (ns.Gank.SoundChoice()).label end, function() ns.Gank.CycleSound() end)
 	toggle("Popups", "Kills, promotions and callouts",

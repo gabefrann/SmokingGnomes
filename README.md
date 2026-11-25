@@ -54,6 +54,7 @@ Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings 
 - Enemy gnomes you see (nameplates, mouseover or target) get a **"Gnome spotted"** popup with a short ping, plus how often the company has smoked them. Corporate spies of any race get a red **"Corporate spy spotted"**.
 - A small panel lists everyone spotted in the last 3 minutes. **Click a name to target that player.** The **"Target the last spotted gnome"** key binding does the same.
 - The panel also lists, quietly, gnomes that **your party or raid has targeted** ("Molly's target") and gnomes that **guildmates in your zone spotted** ("Molly · 2m ago"). Clicking only reaches about 100 yards, so these may be out of range. Hover a row for details.
+- Your own gnomes always come first. At most 3 guildmates' spots are listed; the rest are counted in the header ("+5 guild"). Switch guild spots off in Settings if you only want your own.
 - Drag the corner of the panel to resize it (outside combat): wider for long names, taller for up to 12 names.
 - Each player is called out at most once every 3 minutes. Battlegrounds and arenas are ignored.
 - Targeting always needs your click or key press. Addons can't choose a target by themselves, the same as Next!. The list can't change during combat, so it updates when the fight ends.

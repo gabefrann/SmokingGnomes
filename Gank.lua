@@ -18,6 +18,7 @@ ns.Gank = Gank
 local CALLOUT_EVERY = 180 -- seconds between callouts for the same player
 local KEEP = 180          -- seconds a spotted player stays on the list
 local SHARE_EVERY = 120   -- seconds between telling the guild about the same gnome
+local GUILD_ROWS = 3      -- at most this many guildmates' spots on the panel
 local GROUP_COLOR = "66bbff" -- a groupmate's target
 local SEEN_COLOR = "d9b35c"  -- spotted by a guildmate in my zone
 local ROWS = 5         -- rows shown at the default size
@@ -332,7 +333,7 @@ end
 
 -- A guildmate spotted a gnome. Listed quietly, and only if they're on my map.
 function Gank.Remote(sender, name, class, level, map)
-	if not isOn() or inBattle() then
+	if not isOn() or inBattle() or SG.db.settings.gankGuild == false then
 		return
 	end
 	name = SG.fullName(name)
@@ -600,7 +601,20 @@ function Gank.Refresh()
 	pending = false
 	hud:SetShown(isOn())
 
-	local list = {}
+	-- Rank: 1 spy, 2 in my view, 3 a groupmate's target, 4 seen by me, 5 a guildmate's spot.
+	local function rank(s)
+		if s.recall then
+			return 1
+		elseif s.near then
+			return 2
+		elseif s.grp then
+			return 3
+		elseif s.mine then
+			return 4 -- seen by me, even if a guildmate saw them more recently
+		end
+		return 5
+	end
+	local all = {}
 	for _, s in pairs(spotted) do
 		s.near = inView(s) ~= nil
 		s.grp = not s.near and groupTarget(s)
@@ -610,22 +624,31 @@ function Gank.Refresh()
 		if now - s.t > KEEP then
 			spotted[name] = nil
 		else
-			list[#list + 1] = s
+			s.rank = rank(s)
+			all[#all + 1] = s
 		end
 	end
-	-- Spies first, then whoever is in view, then the most recently seen.
-	table.sort(list, function(a, b)
-		if a.recall ~= b.recall then
-			return a.recall
-		end
-		if a.near ~= b.near then
-			return a.near
-		end
-		if a.grp ~= b.grp then
-			return a.grp
+	table.sort(all, function(a, b)
+		if a.rank ~= b.rank then
+			return a.rank < b.rank
 		end
 		return a.t > b.t
 	end)
+	-- Guildmates' spots never crowd out your own: at most GUILD_ROWS of them are listed
+	-- (spies excepted), and the rest are counted in the header.
+	local list, guildShown, guildHidden = {}, 0, 0
+	for _, s in ipairs(all) do
+		if s.rank == 5 then
+			if guildShown < GUILD_ROWS then
+				guildShown = guildShown + 1
+				list[#list + 1] = s
+			else
+				guildHidden = guildHidden + 1
+			end
+		else
+			list[#list + 1] = s
+		end
+	end
 
 	for i, r in ipairs(rows) do
 		local s = i <= visibleRows and list[i] or nil
@@ -656,7 +679,24 @@ function Gank.Refresh()
 	end
 	hud.hint:SetText(secondhand and "Group/guild names may be out of range" or "Click a name to target it")
 	hud.empty:SetShown(#list == 0)
-	hud.count:SetText(#list == 0 and "watching" or (#list .. " spotted"))
+	local count = #list == 0 and "watching" or (#list .. " spotted")
+	if guildHidden > 0 then
+		count = count .. " · +" .. guildHidden .. " guild"
+	end
+	hud.count:SetText(count)
+end
+
+-- Settings: list guildmates' spots or not. Your own spots are still shared either way.
+function Gank.SetGuildSpots(on)
+	SG.db.settings.gankGuild = on
+	if not on then
+		for name, s in pairs(spotted) do
+			if s.seenBy and not s.mine and not s.by then
+				spotted[name] = nil
+			end
+		end
+	end
+	Gank.Refresh()
 end
 
 function Gank.Toggle(state)
