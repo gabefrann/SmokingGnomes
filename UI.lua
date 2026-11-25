@@ -915,7 +915,7 @@ local function onUnitTooltip(tt, data)
 	end
 	local e = SG.db.players[full]
 	if e then
-		tt:AddLine("Smoking Gnomes Inc.  ·  " .. SG.jobTitle(full, e.total), ACCENT[1], ACCENT[2], ACCENT[3])
+		tt:AddLine(SG.jobTitle(full, e.total) .. " at Smoking Gnomes Inc.", ACCENT[1], ACCENT[2], ACCENT[3])
 		if full == SG.lastWeekWinner() then
 			tt:AddLine(STAR .. " Employee of the Week", GOLD[1], GOLD[2], GOLD[3])
 		end
