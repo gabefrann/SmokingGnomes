@@ -240,7 +240,7 @@ function SG.rollWeek(e)
 		if e.weekId == cur - 7 then
 			e.prevWeek, e.prevWeekId, e.pp = e.week or 0, e.weekId, e.wp or 0
 		end
-		e.week, e.wa, e.wp, e.weekId = 0, 0, 0, cur
+		e.week, e.wa, e.wp, e.aw, e.weekId = 0, 0, 0, 0, cur
 	end
 end
 
@@ -261,6 +261,11 @@ function SG.lastWeekCount(e, cur)
 		return e.prevWeek or 0
 	end
 	return 0
+end
+
+-- Alliance players killed: this week and lifetime.
+function SG.pvpCounts(e, cur)
+	return e.weekId == cur and (e.aw or 0) or 0, e.ak or 0
 end
 
 -- Last week's points, in quarters.
@@ -329,11 +334,13 @@ end
 local SALT = "SmokingGnomes|v2|gnomes-first|lok'tar"
 -- wp / pp: this week's and last week's points, in quarters (added in 0.16; entries from
 -- older versions have 11 fields and count each gnome as 1 point).
-local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim", "wp", "pp" }
+-- ak / aw: Alliance players killed, lifetime and this week, gnomes included (added in
+-- 0.17; older entries have 11 or 13 fields and count only their gnomes).
+local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim", "wp", "pp", "ak", "aw" }
 local TEXT_FIELDS = { class = true, lastVictim = true } -- everything else is a whole number
 local OLD_FIELD_COUNT = 11
 SG.FIELD_COUNT = #FIELDS
-SG.OLD_FIELD_COUNT = OLD_FIELD_COUNT
+SG.FIELD_COUNTS = { [11] = true, [13] = true, [#FIELDS] = true } -- formats still accepted
 
 local function hash(s)
 	local h1, h2 = 5381, 52711
@@ -367,7 +374,7 @@ function SG.decode(name, raw, sig)
 		return nil
 	end
 	local parts = { strsplit("|", raw) }
-	if #parts ~= #FIELDS and #parts ~= OLD_FIELD_COUNT then
+	if not SG.FIELD_COUNTS[#parts] then
 		return nil
 	end
 	local e = { raw = raw, sig = sig }
@@ -386,6 +393,10 @@ function SG.decode(name, raw, sig)
 	if #parts == OLD_FIELD_COUNT then
 		-- From a version before points: each gnome counts as 1 point.
 		e.wp, e.pp = e.week * 4, e.prevWeek * 4
+	end
+	if #parts < #FIELDS then
+		-- From a version before Alliance kills: its gnomes are the only ones known.
+		e.ak, e.aw = e.total, e.week
 	end
 	return e
 end
@@ -447,7 +458,9 @@ function SG.adoptOwn(remote)
 			remote.week = remote.week + (e.week or 0)
 			remote.wa = remote.wa + (e.wa or 0)
 			remote.wp = (remote.wp or 0) + (e.wp or 0)
+			remote.aw = (remote.aw or 0) + (e.aw or 0)
 		end
+		remote.ak = (remote.ak or 0) + (e.ak or 0)
 		if (e.lastKill or 0) > (remote.lastKill or 0) then
 			remote.lastKill, remote.lastVictim = e.lastKill, e.lastVictim
 		end
@@ -487,10 +500,12 @@ function SG.mergeLegacy(old)
 	end
 	up("total", old.total)
 	up("assists", old.assists)
+	up("ak", old.ak)
 	if old.weekId == e.weekId then
 		up("week", old.week)
 		up("wa", old.wa)
 		up("wp", old.wp)
+		up("aw", old.aw)
 	end
 	if old.prevWeekId and old.prevWeekId == e.weekId - 7 then
 		if e.prevWeekId ~= old.prevWeekId then
@@ -530,6 +545,7 @@ function SG.recountOwn()
 		end
 	end
 	if c.total > 0 then
+		c.ak, c.aw = c.total, c.week -- the ledger only holds gnomes: a lower bound
 		return SG.mergeLegacy(c)
 	end
 	return false
@@ -575,6 +591,8 @@ function SG.recordKill(info)
 		e.week = (e.week or 0) + 1
 		info.points = info.points or 4
 		e.wp = (e.wp or 0) + info.points
+		e.ak = (e.ak or 0) + 1 -- a gnome is an Alliance kill too
+		e.aw = (e.aw or 0) + 1
 		e.lastKill = t
 		e.lastVictim = info.victim
 		e.u = t
@@ -598,6 +616,23 @@ function SG.recordKill(info)
 		ns.Sync.Queue()
 	end
 end
+
+-- Any other Alliance player killed by me or my pet: counted for the PvP tab only, quietly.
+function SG.recordPvpKill()
+	local e = SG.me()
+	e.ak = (e.ak or 0) + 1
+	e.aw = (e.aw or 0) + 1
+	e.u = SG.now()
+	SG.seal(e)
+	ns.UI.Refresh()
+	ns.Sync.Queue()
+end
+
+-- Races that are only ever Horde. Any other race killed in the open world is counted as
+-- an Alliance kill (the guild is Horde, so enemy players are Alliance).
+local HORDE_RACES = { Orc = true, Scourge = true, Undead = true, Tauren = true, Troll = true,
+	BloodElf = true, Goblin = true, Nightborne = true, HighmountainTauren = true,
+	MagharOrc = true, ZandalariTroll = true, Vulpera = true }
 
 ---------------------------------------------------------------------------
 -- Kill detection: PARTY_KILL(attackerGUID, targetGUID)
@@ -749,6 +784,9 @@ local function resolve(p)
 			logKill("points: %s (level %s vs your %s)", SG.points(info.points), tostring(p.level or "?"), tostring(p.myLevel or "?"))
 		end
 		SG.recordKill(info)
+	elseif p.kind ~= "group" and not HORDE_RACES[race] then
+		logKill("alliance kill counted: %s (%s)", tostring(name), race)
+		SG.recordPvpKill()
 	end
 	-- Recall Notices can name any player, gnome or not.
 	ns.Bounty.OnKill(p.target, name, str(realm), p.zone, p.kind)
@@ -923,6 +961,10 @@ function SG.ranked(mode)
 		local kills, assists, points
 		if mode == "week" then
 			kills, assists, points = SG.weekCounts(e, cur)
+		elseif mode == "pvp" then
+			-- PvP tab: Alliance kills this week ("kills"), then lifetime ("assists" column).
+			kills, assists = SG.pvpCounts(e, cur)
+			points = 0
 		else
 			kills, assists, points = e.total or 0, e.assists or 0, 0
 		end

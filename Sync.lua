@@ -294,13 +294,18 @@ local function plausible(old, new)
 	if (new.wp or 0) > 5 * new.week or (new.pp or 0) > 5 * (new.prevWeek or 0) then
 		return false
 	end
+	-- Alliance kills include the gnomes; this week's can't exceed the lifetime count.
+	if (new.ak or 0) < new.total or (new.aw or 0) < new.week or (new.aw or 0) > (new.ak or 0) then
+		return false
+	end
 	if new.weekId > SG.weekId() + 7 or new.u > SG.now() + 600 then
 		return false
 	end
 	if old then
 		local elapsed = math.max(0, new.u - (old.u or 0))
 		local allowed = math.min(MAX_STEP, BURST + math.floor(elapsed / KILL_SECONDS))
-		if new.total - (old.total or 0) > allowed or new.assists - (old.assists or 0) > allowed then
+		if new.total - (old.total or 0) > allowed or new.assists - (old.assists or 0) > allowed
+			or (new.ak or 0) - (old.ak or 0) > allowed then
 			return false
 		end
 	end
@@ -416,7 +421,7 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		Sync.Queue(math.random(1, 4))
 		local since = tonumber(p[3])
 		scheduleRelay(sender, (since and since > 0) and since or nil)
-	elseif kind == "R" and (#p == 4 + SG.FIELD_COUNT or #p == 4 + SG.OLD_FIELD_COUNT) then
+	elseif kind == "R" and SG.FIELD_COUNTS[#p - 4] then
 		-- Names may come without a realm: WoW Forever doesn't report one.
 		local name = p[3]
 		if not name or name == "" then

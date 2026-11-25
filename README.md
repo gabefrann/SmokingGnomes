@@ -65,6 +65,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70â
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
 - **Assist:** a gnome killed by someone in your party or raid, or a gnome that dies near you while you're awarded honor for it (you helped, even if the killer isn't grouped with you). Assists score no points and are used only to break ties.
+- **PvP tab:** every Alliance player you (or your pet) kill in the open world, gnome or not, this week and lifetime. It's for general PvP stats; points, titles and Employee of the Week still come from gnomes only. Counting starts from version 0.17; earlier kills there are only your gnomes.
 - **World PvP only:** kills in battlegrounds and arenas don't count.
 - **Weekly points:** the Weekly board ranks by points. Each gnome scores by its level against yours, so a fair fight is worth the same at level 20 as at 60:
 

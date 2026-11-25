@@ -632,14 +632,16 @@ local function build()
 	sub:SetPoint("TOPLEFT", PAD + 40, -31)
 	sub:SetPoint("RIGHT", -PAD, 0)
 
-	local GAP = 14
+	local GAP = 11
 	tabs = { makeTab("Weekly", "week", PAD) }
 	local x = PAD + tabs[1]:GetWidth() + GAP
 	tabs[2] = makeTab("Lifetime", "all", x)
 	x = x + tabs[2]:GetWidth() + GAP
-	tabs[3] = makeTab("Spies", "recall", x)
+	tabs[3] = makeTab("PvP", "pvp", x)
 	x = x + tabs[3]:GetWidth() + GAP
-	tabs[4] = makeTab("Lab Log", "mine", x)
+	tabs[4] = makeTab("Spies", "recall", x)
+	x = x + tabs[4]:GetWidth() + GAP
+	tabs[5] = makeTab("Lab Log", "mine", x)
 
 	local div = rect(frame, BORDER[1], BORDER[2], BORDER[3], 0.6, "ARTWORK")
 	div:SetHeight(1)
@@ -764,6 +766,12 @@ local function boardRow(r, rank, row, isMe)
 		setRow(r, rank, row.name, SG.points(row.points), row.kills, row.e, isMe)
 		r.tip[#r.tip + 1] = ("This week: %d gnome%s, %s points%s"):format(row.kills, row.kills == 1 and "" or "s",
 			SG.points(row.points), row.assists > 0 and (", " .. row.assists .. " assists") or "")
+	elseif mode == "pvp" then
+		setRow(r, rank, row.name, row.kills, row.assists, row.e, isMe)
+		local e = row.e or {}
+		r.tip[#r.tip + 1] = ("Alliance killed: %d this week, %d lifetime"):format(row.kills, row.assists)
+		r.tip[#r.tip + 1] = ("Of those, gnomes: %d this week, %d lifetime"):format(
+			(SG.weekCounts(e, SG.weekId())), e.total or 0)
 	else
 		setRow(r, rank, row.name, row.kills, row.assists, row.e, isMe)
 	end
@@ -772,6 +780,8 @@ end
 local function refreshBoard()
 	if mode == "week" then
 		setHeads("EMPLOYEE", "POINTS", "GNOMES", -62)
+	elseif mode == "pvp" then
+		setHeads("EMPLOYEE", "WEEK", "LIFETIME", -62)
 	else
 		setHeads("EMPLOYEE", "HARVESTED", "ASSISTS", -62)
 	end
@@ -804,12 +814,16 @@ local function refreshBoard()
 
 	colHeads:SetShown(shown > 0)
 	empty:SetShown(shown == 0)
-	empty:SetText((mode == "week" and "No gnomes harvested this week." or "No gnomes harvested yet.")
-		.. "\n\n|cff8c8c94Land the killing blow on a gnome\nin the open world to start production.|r")
+	if mode == "pvp" then
+		empty:SetText("No Alliance killed yet.\n\n|cff8c8c94Every Alliance player you kill in the\nopen world counts here, gnome or not.|r")
+	else
+		empty:SetText((mode == "week" and "No gnomes harvested this week." or "No gnomes harvested yet.")
+			.. "\n\n|cff8c8c94Land the killing blow on a gnome\nin the open world to start production.|r")
+	end
 
 	local e = SG.me()
 	local title = myCareer(e)
-	local count = mode == "week" and e.week or e.total
+	local count = (mode == "week" and e.week) or (mode == "pvp" and (e.ak or 0)) or e.total
 	if count > 0 and myRank then
 		footer:SetText(("You: #%d  ·  |cff%s%s|r"):format(myRank, hex(ACCENT), title))
 	else
