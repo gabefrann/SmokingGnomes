@@ -1,11 +1,11 @@
-﻿# Smoking Gnomes Inc.
+# Smoking Gnomes Inc.
 
 The guild's gnome-harvesting Production Report: a leaderboard for gnomes killed in world PvP, plus Corporate Spies (bounties) reported by officers.
 
 ## Install (guild members)
 **With WowUp (recommended, updates itself):**
 1. Install [WowUp](https://wowup.io) (version 2.24.0 or later supports WoW Forever) and make sure it has found your Forever install.
-2. Go to **Get Addons Ã¢â€ â€™ Install from URL** and paste this repository's GitHub link.
+2. Go to **Get Addons → Install from URL** and paste this repository's GitHub link.
 3. That's it. WowUp updates the addon whenever a new version is released.
 
 **By hand:** download the latest `SmokingGnomes-vX.Y.Z-forever.zip` from this repository's **Releases** page and unzip it into `World of Warcraft\_forever_\Interface\AddOns\`.
@@ -41,7 +41,7 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 
 ## Repeat customers
 - Every gnome kill is shared with the guild as a small signed record.
-- Hovering an Alliance player shows "Smoked by the company: 3Ãƒâ€”", plus who has killed them most often. Regulars get a label: Repeat customer (3), Loyal patient (10), Lifetime subscriber (25).
+- Hovering an Alliance player shows "Smoked by the company: 3×", plus who has killed them most often. Regulars get a label: Repeat customer (3), Loyal patient (10), Lifetime subscriber (25).
 - The **Lab Log** shows the same count next to each of your kills.
 - When you log in, guildmates send only the kills made since you were last online.
 - Counting starts with version 0.8.0. Earlier kills aren't included.
@@ -50,15 +50,16 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 The window and popups use the logo file. `/gnomes crest` shows what the game itself gives for the guild's tabard emblem, large, and prints its file number and colours, which is what the logo is rebuilt from. `/gnomes crest on` tries drawing that live crest in the window instead, and `/gnomes crest off` switches back.
 
 ## Gank mode
-Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings view, or a key (Key Bindings Ã¢â€ â€™ Smoking Gnomes Inc.).
+Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings view, or a key (Key Bindings → Smoking Gnomes Inc.).
 - Enemy gnomes you see (nameplates, mouseover or target) get a **"Gnome spotted"** popup with a short ping, plus how often the company has smoked them. Corporate spies of any race get a red **"Corporate spy spotted"**.
 - A small panel lists everyone spotted in the last 3 minutes. **Click a name to target that player.** The **"Target the last spotted gnome"** key binding does the same.
+- The panel also lists, quietly, gnomes that **your party or raid has targeted** ("Molly's target") and gnomes that **guildmates in your zone spotted** ("Molly · 2m ago"). Clicking only reaches about 100 yards, so these may be out of range. Hover a row for details.
 - Drag the corner of the panel to resize it (outside combat): wider for long names, taller for up to 12 names.
 - Each player is called out at most once every 3 minutes. Battlegrounds and arenas are ignored.
 - Targeting always needs your click or key press. Addons can't choose a target by themselves, the same as Next!. The list can't change during combat, so it updates when the fight ends.
 
 ## Settings
-Click the cog in the window header, or type `/gnomes settings`: window size (70Ã¢â‚¬â€œ150%), background opacity, gank mode, callout sound, popups and the minimap button.
+Click the cog in the window header, or type `/gnomes settings`: window size (70–150%), background opacity, gank mode, callout sound, popups and the minimap button.
 
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.

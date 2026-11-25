@@ -23,8 +23,8 @@ local SEEN_COLOR = "d9b35c"  -- spotted by a guildmate in my zone
 local ROWS = 5         -- rows shown at the default size
 local MAX_ROWS = 12    -- rows available when the panel is resized taller
 local ROW_H = 20
-local W = 210
-local MIN_W, MIN_H, MAX_W = 170, 52 + 1 * ROW_H, 420
+local W = 240
+local MIN_W, MIN_H, MAX_W = 220, 52 + 1 * ROW_H, 420 -- the status column needs room for "Molly's target"
 local MAX_H = 52 + MAX_ROWS * ROW_H
 local visibleRows = ROWS
 local WHITE = "Interface\\Buttons\\WHITE8x8"
@@ -248,10 +248,10 @@ function Gank.Status(s)
 		return lvl .. (isDead(unit) and "|cff8c8c94dead|r" or "|cff4cb56bnear|r")
 	end
 	if groupTarget(s) then
-		return lvl .. (isDead(s.byUnit) and "|cff8c8c94dead|r" or ("|cff" .. GROUP_COLOR .. short(s.by) .. "|r"))
+		return lvl .. (isDead(s.byUnit) and "|cff8c8c94dead|r" or ("|cff" .. GROUP_COLOR .. short(s.by) .. "'s target|r"))
 	end
 	if guildSpot(s) then
-		return lvl .. "|cff" .. SEEN_COLOR .. short(s.seenBy) .. " " .. ago(GetTime() - s.seenAt) .. "|r"
+		return lvl .. "|cff" .. SEEN_COLOR .. short(s.seenBy) .. " · " .. ago(GetTime() - s.seenAt) .. " ago|r"
 	end
 	return lvl .. ago(GetTime() - s.t) .. " ago"
 end
@@ -448,7 +448,7 @@ end
 local function build()
 	hud = CreateFrame("Frame", "SmokingGnomesGankPanel", UIParent, "BackdropTemplate")
 	local size = SG.db.settings.gankSize
-	hud:SetSize(size and size[1] or W, size and size[2] or (52 + ROWS * ROW_H))
+	hud:SetSize(math.max(MIN_W, size and size[1] or W), size and size[2] or (52 + ROWS * ROW_H))
 	hud:SetFrameStrata("MEDIUM")
 	hud:SetClampedToScreen(true)
 	hud:SetMovable(true)
@@ -502,10 +502,10 @@ local function build()
 		hl:SetAllPoints()
 		r.name = text(r, 12)
 		r.name:SetPoint("LEFT", 4, 0)
-		r.name:SetPoint("RIGHT", r, "RIGHT", -84, 0)
+		r.name:SetPoint("RIGHT", r, "RIGHT", -124, 0)
 		r.info = text(r, 11, MUTED, "RIGHT")
 		r.info:SetPoint("RIGHT", -4, 0)
-		r.info:SetWidth(80)
+		r.info:SetWidth(120)
 		r:SetScript("OnEnter", Gank.Tooltip)
 		r:SetScript("OnLeave", function()
 			GameTooltip:Hide()
@@ -645,6 +645,16 @@ function Gank.Refresh()
 		end
 	end
 	targetButton:SetAttribute("macrotext1", list[1] and macroFor(list[1].name) or "")
+	-- Names from the group or guild may be out of targeting range: say so, so a click
+	-- that does nothing doesn't look broken.
+	local secondhand = false
+	for i = 1, math.min(#list, visibleRows) do
+		local s = list[i]
+		if not s.near and (s.grp or guildSpot(s)) then
+			secondhand = true
+		end
+	end
+	hud.hint:SetText(secondhand and "Group/guild names may be out of range" or "Click a name to target it")
 	hud.empty:SetShown(#list == 0)
 	hud.count:SetText(#list == 0 and "watching" or (#list .. " spotted"))
 end
@@ -666,7 +676,7 @@ function Gank.Toggle(state)
 		Gank.ScanNameplates()
 	end
 	ns.UI.Refresh()
-	SG.print(state and "Gank mode on. Gnomes you see are called out and listed; click a name to target it."
+	SG.print(state and "Gank mode on. Gnomes you see are called out and listed, along with gnomes your group targets and guildmates in this zone spot. Click a name to target it (within about 100 yards)."
 		or "Gank mode off.")
 end
 

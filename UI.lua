@@ -321,6 +321,8 @@ local HELP = {
 	{ "/gnomes status", "Check it's working" },
 	{ "/gnomes board", "Top 10 in chat" },
 	{ "/gnomes gank", "Gank mode on or off" },
+	{ "   Molly's target", "A groupmate targeted them" },
+	{ "   Molly · 2m ago", "A guildmate here saw them" },
 	{ "/gnomes settings", "Size, opacity, switches" },
 	{ "/gnomes spies", "List suspected spies" },
 	{ "/gnomes spy Name 50g", "Report one (officers)" },
