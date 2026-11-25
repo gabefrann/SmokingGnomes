@@ -88,6 +88,65 @@ local function recallFor(name)
 end
 
 ---------------------------------------------------------------------------
+-- Callout sounds. Sound kits are looked up by name so a missing one is skipped
+-- instead of playing nothing silently. Soft sounds use the sound-effects volume.
+---------------------------------------------------------------------------
+
+Gank.SOUNDS = {
+	{ key = "soft", label = "Soft", kit = "TELL_MESSAGE", channel = "SFX" },
+	{ key = "coins", label = "Coins", kit = "LOOT_WINDOW_COIN_SOUND", channel = "SFX" },
+	{ key = "ding", label = "Ding", file = 567458, channel = "Master" },
+	{ key = "off", label = "Off" },
+}
+
+function Gank.SoundChoice()
+	local s = SG.db.settings
+	if s.gankSoundChoice == nil and s.gankSound == false then
+		s.gankSoundChoice = "off" -- older setting
+	end
+	local key = s.gankSoundChoice or "soft"
+	for i, snd in ipairs(Gank.SOUNDS) do
+		if snd.key == key then
+			return snd, i
+		end
+	end
+	return Gank.SOUNDS[1], 1
+end
+
+local function play(snd)
+	if snd.kit then
+		local id = SOUNDKIT and SOUNDKIT[snd.kit]
+		local ok, played = false, false
+		if id then
+			ok, played = pcall(PlaySound, id, snd.channel)
+		end
+		if not (ok and played ~= false) then
+			pcall(PlaySoundFile, 567458, "SFX") -- that sound isn't on this client: quiet ding
+		end
+	elseif snd.file then
+		pcall(PlaySoundFile, snd.file, snd.channel)
+	end
+end
+
+-- Recall targets always get the coins (there's money on them), unless sound is off.
+function Gank.PlayCallout(recall)
+	local snd = Gank.SoundChoice()
+	if snd.key == "off" then
+		return
+	end
+	play(recall and Gank.SOUNDS[2] or snd)
+end
+
+-- Settings: step to the next sound and play it as a preview.
+function Gank.CycleSound()
+	local _, i = Gank.SoundChoice()
+	local nextSnd = Gank.SOUNDS[i % #Gank.SOUNDS + 1]
+	SG.db.settings.gankSoundChoice = nextSnd.key
+	play(nextSnd)
+	return nextSnd
+end
+
+---------------------------------------------------------------------------
 -- Callouts
 ---------------------------------------------------------------------------
 
@@ -110,12 +169,7 @@ local function callout(s, bounty)
 		local note = (v and v.n > 0) and ("Smoked %d× before."):format(v.n) or "No record with the company yet."
 		ns.UI.Notice("Gnome spotted: " .. s.name, "green", details(s), note)
 	end
-	if SG.db.settings.gankSound ~= false then
-		-- Sound files DBM uses on this client, on the Master channel so they're heard
-		-- even with sound effects turned down: a ding for gnomes, the ready-check chime
-		-- for Recall targets.
-		pcall(PlaySoundFile, bounty and 567478 or 567458, "Master")
-	end
+	Gank.PlayCallout(bounty ~= nil)
 end
 
 function Gank.Spot(name, class, level, bounty)

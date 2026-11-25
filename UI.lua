@@ -449,6 +449,23 @@ local function buildSettings()
 		y = y - 40
 	end
 
+	-- A button showing the current choice; clicking steps to the next one.
+	local function cycler(title, note, current, step)
+		label(title, note)
+		local b = flatButton(settingsPanel, 50, "")
+		b:SetPoint("TOPRIGHT", 0, y + 2)
+		b:SetScript("OnClick", function()
+			step()
+			UI.Refresh()
+		end)
+		updaters[#updaters + 1] = function()
+			local v = current()
+			b.label:SetText(v)
+			b.label:SetTextColor(unpack(v == "Off" and MUTED or ACCENT))
+		end
+		y = y - 40
+	end
+
 	local s = function() return SG.db.settings end
 	local pct = function(v) return math.floor(v * 100 + 0.5) .. "%" end
 
@@ -458,8 +475,8 @@ local function buildSettings()
 		function() return s().opacity or 0.98 end, function(v) s().opacity = v end, 0.1, 0, 1, pct)
 	toggle("Gank mode", "Call out gnomes, click to target",
 		function() return s().gank == true end, function(v) ns.Gank.Toggle(v) end)
-	toggle("Callout sound", "A ping when a gnome is spotted",
-		function() return s().gankSound ~= false end, function(v) s().gankSound = v end)
+	cycler("Callout sound", "Click to hear the next one",
+		function() return (ns.Gank.SoundChoice()).label end, function() ns.Gank.CycleSound() end)
 	toggle("Popups", "Kills, promotions and callouts",
 		function() return s().toast ~= false end, function(v) s().toast = v end)
 	toggle("Minimap button", nil,
