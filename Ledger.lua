@@ -134,6 +134,10 @@ function Ledger.Receive(raw, sig)
 	end
 	ns.Sync.MarkHeard("kill", k.id, 1)
 	if add(k) then
+		-- One of my own kills I didn't have (another PC, or saved under my first name).
+		if (k.killer == SG.myName or k.killer == SG.myFirstName()) and SG.recountOwn() then
+			ns.Sync.Queue()
+		end
 		ns.UI.Refresh()
 	end
 end
@@ -193,20 +197,37 @@ function Ledger.Load()
 	SG.db.victims = SG.db.victims or {}
 	SG.db.counted = SG.db.counted or {} -- id -> time, so a record is never counted twice
 	-- Tallies saved before 0.14 are keyed by first name ("little"); re-key them by full name.
+	local myFirst = SG.myFirstName()
+	for key, v in pairs(SG.db.victims) do
+		if myFirst and v.by and v.by[myFirst] then
+			v.by[SG.myName] = (v.by[SG.myName] or 0) + v.by[myFirst]
+			v.by[myFirst] = nil
+		end
+		if myFirst and v.lastBy == myFirst then
+			v.lastBy = SG.myName
+		end
+	end
+	local moves = {} -- collected first: adding keys while looping over a table is unsafe
 	for key, v in pairs(SG.db.victims) do
 		local want = v.name and Ledger.Key(v.name)
 		if want and want ~= key then
-			local existing = SG.db.victims[want]
-			if existing then
-				existing.n = existing.n + v.n
-				for killer, n in pairs(v.by or {}) do
-					existing.by[killer] = (existing.by[killer] or 0) + n
-				end
-			else
-				SG.db.victims[want] = v
-			end
-			SG.db.victims[key] = nil
+			moves[#moves + 1] = { key, want }
 		end
+	end
+	for _, m in ipairs(moves) do
+		local v, existing = SG.db.victims[m[1]], SG.db.victims[m[2]]
+		if existing then
+			existing.n = existing.n + v.n
+			for killer, n in pairs(v.by or {}) do
+				existing.by[killer] = (existing.by[killer] or 0) + n
+			end
+			if (v.last or 0) > (existing.last or 0) then
+				existing.last, existing.lastBy = v.last, v.lastBy
+			end
+		else
+			SG.db.victims[m[2]] = v
+		end
+		SG.db.victims[m[1]] = nil
 	end
 	local now = SG.now()
 	for id, stored in pairs(SG.db.kills) do

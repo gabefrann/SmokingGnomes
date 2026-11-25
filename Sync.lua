@@ -313,6 +313,16 @@ local function ingest(name, raw, sig, firsthand)
 		return
 	end
 
+	-- My own numbers from before 0.14, kept under my first name by a guildmate.
+	if name == SG.myFirstName() then
+		new.raw, new.sig = nil, nil
+		if SG.mergeLegacy(new) then
+			Sync.Queue()
+			ns.UI.Refresh()
+		end
+		return
+	end
+
 	local players = SG.db.players
 	-- Before 0.14 entries used the first name only ("Lih"). Ignore such an entry when
 	-- this player is already known under the full name ("Lih Zaddi").

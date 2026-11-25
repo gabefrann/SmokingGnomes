@@ -172,7 +172,31 @@ local function callout(s, bounty)
 	Gank.PlayCallout(bounty ~= nil)
 end
 
-function Gank.Spot(name, class, level, bounty)
+-- Is this unit token still the spotted player?
+local function isUnit(unit, name)
+	local ok, exists = pcall(UnitExists, unit)
+	return ok and plain(exists) == true and SG.unitFullName(unit) == name
+end
+
+-- In view right now: their nameplate is up (within nameplate range) or they're my target.
+-- Keeps "last seen" current while they're in view. Returns the unit token, or nil.
+local function inView(s)
+	if s.unit and not isUnit(s.unit, s.name) then
+		s.unit = nil
+	end
+	local unit = s.unit or (isUnit("target", s.name) and "target") or nil
+	if unit then
+		s.t = GetTime()
+	end
+	return unit
+end
+
+local function isDead(unit)
+	local ok, dead = pcall(UnitIsDeadOrGhost, unit)
+	return ok and plain(dead) == true
+end
+
+function Gank.Spot(name, class, level, bounty, unit)
 	local now = GetTime()
 	local s = spotted[name]
 	if not s then
@@ -182,6 +206,9 @@ function Gank.Spot(name, class, level, bounty)
 	s.class = class or s.class
 	s.level = level or s.level
 	s.t = now
+	if unit and unit:match("^nameplate") then
+		s.unit = unit
+	end
 	s.recall = bounty ~= nil
 	if not s.callout or now - s.callout > CALLOUT_EVERY then
 		s.callout = now
@@ -221,7 +248,7 @@ local function check(unit)
 	end
 	local okC, _, class = pcall(UnitClass, unit)
 	local okL, level = pcall(UnitLevel, unit)
-	Gank.Spot(name, okC and SG.str(class) or nil, okL and SG.num(level) or nil, bounty)
+	Gank.Spot(name, okC and SG.str(class) or nil, okL and SG.num(level) or nil, bounty, unit)
 end
 
 ---------------------------------------------------------------------------
@@ -300,10 +327,10 @@ local function build()
 		hl:SetAllPoints()
 		r.name = text(r, 12)
 		r.name:SetPoint("LEFT", 4, 0)
-		r.name:SetPoint("RIGHT", r, "RIGHT", -64, 0)
+		r.name:SetPoint("RIGHT", r, "RIGHT", -84, 0)
 		r.info = text(r, 11, MUTED, "RIGHT")
 		r.info:SetPoint("RIGHT", -4, 0)
-		r.info:SetWidth(60)
+		r.info:SetWidth(80)
 		r:Hide()
 		rows[i] = r
 	end
@@ -315,20 +342,29 @@ local function build()
 	hud.hint:SetPoint("BOTTOM", 0, 7)
 	hud.hint:SetText("Click a name to target it")
 
-	-- Ages tick every second; that's text only, so it also works during combat.
+	-- "near" while in view, else time since last seen. Updated twice a second; text only,
+	-- so it also works during combat.
 	local elapsed = 0
 	hud:SetScript("OnUpdate", function(_, dt)
 		elapsed = elapsed + dt
-		if elapsed < 1 then
+		if elapsed < 0.5 then
 			return
 		end
 		elapsed = 0
 		local now = GetTime()
 		for _, r in ipairs(rows) do
-			if r.spot then
-				local age = math.floor(now - r.spot.t)
-				local lvl = r.spot.level and r.spot.level > 0 and (r.spot.level .. "  ") or ""
-				r.info:SetText(lvl .. (age < 60 and (age .. "s") or (math.floor(age / 60) .. "m")))
+			local s = r.spot
+			if s then
+				local lvl = s.level and s.level > 0 and (s.level .. "  ") or ""
+				local unit = inView(s)
+				if unit and isDead(unit) then
+					r.info:SetText(lvl .. "|cff8c8c94dead|r")
+				elseif unit then
+					r.info:SetText(lvl .. "|cff4cb56bnear|r")
+				else
+					local age = math.floor(now - s.t)
+					r.info:SetText(lvl .. (age < 60 and (age .. "s ago") or (math.floor(age / 60) .. "m ago")))
+				end
 			end
 		end
 	end)
@@ -394,8 +430,11 @@ function Gank.Refresh()
 	pending = false
 	hud:SetShown(isOn())
 
-	local now = GetTime()
 	local list = {}
+	for _, s in pairs(spotted) do
+		s.near = inView(s) ~= nil
+	end
+	local now = GetTime()
 	for name, s in pairs(spotted) do
 		if now - s.t > KEEP then
 			spotted[name] = nil
@@ -403,9 +442,13 @@ function Gank.Refresh()
 			list[#list + 1] = s
 		end
 	end
+	-- Spies first, then whoever is in view, then the most recently seen.
 	table.sort(list, function(a, b)
 		if a.recall ~= b.recall then
 			return a.recall
+		end
+		if a.near ~= b.near then
+			return a.near
 		end
 		return a.t > b.t
 	end)
@@ -481,6 +524,7 @@ function Gank.Init()
 	Gank.Refresh()
 	local f = CreateFrame("Frame")
 	f:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+	f:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 	f:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 	f:RegisterEvent("PLAYER_TARGET_CHANGED")
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -488,6 +532,14 @@ function Gank.Init()
 		if event == "NAME_PLATE_UNIT_ADDED" then
 			if SG.str(unit) then
 				check(unit)
+			end
+		elseif event == "NAME_PLATE_UNIT_REMOVED" then
+			-- Out of nameplate range (or hidden): last seen now.
+			for _, s in pairs(spotted) do
+				if s.unit and s.unit == unit then
+					s.unit = nil
+					s.t = GetTime()
+				end
 			end
 		elseif event == "UPDATE_MOUSEOVER_UNIT" then
 			check("mouseover")

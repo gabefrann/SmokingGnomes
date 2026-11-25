@@ -402,6 +402,70 @@ function SG.adoptOwn(remote)
 	return true
 end
 
+-- My first name when my full name has a surname ("Lih" for "Lih Zaddi"), else nil.
+function SG.myFirstName()
+	local first = SG.myName and SG.myName:match("^%S+")
+	return first ~= SG.myName and first or nil
+end
+
+-- Merge numbers kept under my first name (before 0.14) into my full-name entry. Each
+-- field takes the higher value, so merging the same copy again changes nothing.
+-- Returns true if my numbers went up.
+function SG.mergeLegacy(old)
+	local e = SG.me()
+	SG.rollWeek(old)
+	local changed = false
+	local function up(k, v)
+		if (v or 0) > (e[k] or 0) then
+			e[k] = v
+			changed = true
+		end
+	end
+	up("total", old.total)
+	up("assists", old.assists)
+	if old.weekId == e.weekId then
+		up("week", old.week)
+		up("wa", old.wa)
+	end
+	if old.prevWeekId and old.prevWeekId == e.weekId - 7 then
+		if e.prevWeekId ~= old.prevWeekId then
+			e.prevWeek, e.prevWeekId = 0, old.prevWeekId
+		end
+		up("prevWeek", old.prevWeek)
+	end
+	if (old.lastKill or 0) > (e.lastKill or 0) then
+		e.lastKill, e.lastVictim = old.lastKill, old.lastVictim
+	end
+	if changed then
+		e.u = math.max(SG.now(), e.u or 0)
+		SG.freshStart = false -- my own copy is complete; don't add the guild's on top
+		SG.seal(e)
+	end
+	return changed
+end
+
+-- My own numbers are never lower than my signed kill records in the company ledger.
+function SG.recountOwn()
+	local first = SG.myFirstName()
+	local weekStart = SG.now() + secondsUntilReset() - 7 * 86400
+	local c = { total = 0, week = 0, assists = 0, wa = 0, weekId = SG.weekId(), lastKill = 0 }
+	for _, k in pairs(SG.db.kills or {}) do
+		if k.killer == SG.myName or (first and k.killer == first) then
+			c.total = c.total + 1
+			if k.t >= weekStart then
+				c.week = c.week + 1
+			end
+			if k.t > c.lastKill then
+				c.lastKill, c.lastVictim = k.t, k.victim
+			end
+		end
+	end
+	if c.total > 0 then
+		return SG.mergeLegacy(c)
+	end
+	return false
+end
+
 -- Test kills never touch your numbers; their rows vanish on the next reload.
 local function clearTestKills()
 	local list = SG.db.recent[SG.myName]
@@ -1093,23 +1157,14 @@ f:SetScript("OnEvent", function(_, event, ...)
 		SG.myGUID = guidOf("player")
 		local _, classFile = UnitClass("player")
 		SG.myClass = str(classFile)
-		-- Before 0.14 players were keyed by first name only. Move my Lab Log and my
-		-- numbers over to the full name, re-signed under it (the signature covers the
-		-- name). The update time stays, so guildmates accept it as a continuation.
-		local first = SG.myName:match("^%S+")
-		if first ~= SG.myName then
+		-- Before 0.14 players were keyed by first name only. My numbers saved under the
+		-- first name are merged into the full-name entry and re-signed under it.
+		local first = SG.myFirstName()
+		local old = first and SG.db.players[first]
+		local legacy = old and SG.decode(first, old.raw, old.sig)
+		if first then
 			SG.db.recent[SG.myName] = SG.db.recent[SG.myName] or SG.db.recent[first]
 			SG.db.recent[first] = nil
-			local old = SG.db.players[first]
-			if old and not SG.db.players[SG.myName] then
-				local e = SG.decode(first, old.raw, old.sig)
-				if e then
-					e.raw, e.sig = nil, nil
-					e.seen = old.seen
-					SG.db.players[SG.myName] = e
-					SG.seal(e)
-				end
-			end
 			SG.db.players[first] = nil
 		end
 		verifyStore()
@@ -1121,6 +1176,10 @@ f:SetScript("OnEvent", function(_, event, ...)
 		SG.prevOnline = SG.db.lastOnline -- tells guildmates which kills I missed
 		SG.db.lastOnline = SG.now()
 		ns.Ledger.Load()
+		if legacy then
+			SG.mergeLegacy(legacy)
+		end
+		SG.recountOwn()
 		ns.Bounty.Load()
 		scanRoster()
 		call(C_GuildInfo and C_GuildInfo.GuildRoster) -- ask for a roster update (CEO and officers)
