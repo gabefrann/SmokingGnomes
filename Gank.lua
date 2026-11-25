@@ -24,8 +24,8 @@ local SEEN_COLOR = "d9b35c"  -- spotted by a guildmate in my zone
 local ROWS = 5         -- rows shown at the default size
 local MAX_ROWS = 12    -- rows available when the panel is resized taller
 local ROW_H = 20
-local W = 240
-local MIN_W, MIN_H, MAX_W = 220, 52 + 1 * ROW_H, 420 -- the status column needs room for "Molly's target"
+local W = 260
+local MIN_W, MIN_H, MAX_W = 240, 52 + 1 * ROW_H, 420 -- the status column needs room for "Lvl 60  Molly's target"
 local MAX_H = 52 + MAX_ROWS * ROW_H
 local visibleRows = ROWS
 local WHITE = "Interface\\Buttons\\WHITE8x8"
@@ -243,7 +243,7 @@ end
 -- The status column: level, then near / dead / a groupmate's target / a guildmate's
 -- spot / time since I last saw them.
 function Gank.Status(s)
-	local lvl = s.level and s.level > 0 and (s.level .. "  ") or ""
+	local lvl = s.level and s.level > 0 and ("|cff8c8c94Lvl|r " .. s.level .. "  ") or ""
 	local unit = inView(s)
 	if unit then
 		return lvl .. (isDead(unit) and "|cff8c8c94dead|r" or "|cff4cb56bnear|r")
@@ -503,10 +503,10 @@ local function build()
 		hl:SetAllPoints()
 		r.name = text(r, 12)
 		r.name:SetPoint("LEFT", 4, 0)
-		r.name:SetPoint("RIGHT", r, "RIGHT", -124, 0)
+		r.name:SetPoint("RIGHT", r, "RIGHT", -144, 0)
 		r.info = text(r, 11, MUTED, "RIGHT")
 		r.info:SetPoint("RIGHT", -4, 0)
-		r.info:SetWidth(120)
+		r.info:SetWidth(140)
 		r:SetScript("OnEnter", Gank.Tooltip)
 		r:SetScript("OnLeave", function()
 			GameTooltip:Hide()
