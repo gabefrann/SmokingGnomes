@@ -72,6 +72,7 @@ The window and popups use the logo file. `/gnomes crest` shows what the game its
 |---|---|
 | `/gnomes` | Open or close the leaderboard |
 | `/gnomes stats` | Print your numbers |
+| `/gnomes status` | Check it's working: kills seen this session, guildmates with the addon heard from, version |
 | `/gnomes board` | Print this week's top 10 in chat |
 | `/gnomes recalls` | List open Recall Notices in chat |
 | `/gnomes recall <name> [reward]` | Officers: post a Recall Notice (leave the name out to use your target) |

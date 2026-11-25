@@ -111,17 +111,32 @@ function SG.weekId()
 	return math.floor((SG.now() + secondsUntilReset()) / 86400)
 end
 
+-- My realm as the game reports it. WoW Forever reports none, so this is often nil.
+function SG.myRealm()
+	local ok, realm = call(GetNormalizedRealmName)
+	realm = ok and str(realm)
+	if not realm then
+		local ok2, r2 = call(GetRealmName)
+		r2 = ok2 and str(r2)
+		realm = r2 and str((r2:gsub("[%s%-]", "")))
+	end
+	return realm
+end
+
+-- One consistent key per player. With a known realm it's Name-Realm; when the game
+-- reports no realm (WoW Forever), every name is reduced to the bare name so that
+-- roster, chat senders, tooltips and saved data all agree.
 function SG.fullName(name)
 	name = str(name)
 	if not name then
 		return nil
 	end
+	local realm = SG.myRealm()
+	if not realm then
+		return name:match("^[^%-]+")
+	end
 	if not name:find("-", 1, true) then
-		local ok, realm = call(GetNormalizedRealmName)
-		realm = ok and str(realm)
-		if realm then
-			name = name .. "-" .. realm
-		end
+		name = name .. "-" .. realm
 	end
 	return name
 end
@@ -429,6 +444,9 @@ end
 local recentTargets = {}
 local pending = {}
 
+-- What this session has seen, for /gnomes status.
+SG.diag = { events = 0, mine = 0, msgs = 0, peers = {} }
+
 local function guidOf(unit)
 	local ok, g = call(UnitGUID, unit)
 	return ok and str(g) or nil
@@ -474,6 +492,9 @@ local function resolve(p)
 		return false
 	end
 	name = str(name)
+	if p.kind ~= "group" then
+		SG.diag.last = { t = SG.now(), name = name or "?", race = race, counted = race == "Gnome" }
+	end
 	if race == "Gnome" then
 		SG.recordKill({ victim = name, realm = str(realm), zone = p.zone, assist = p.kind == "group" })
 	end
@@ -496,7 +517,9 @@ local function resolvePending()
 end
 
 local function onPartyKill(attacker, target)
+	SG.diag.events = SG.diag.events + 1
 	if SG.secret(attacker) or SG.secret(target) then
+		SG.diag.secret = (SG.diag.secret or 0) + 1
 		return
 	end
 	attacker, target = str(attacker), str(target)
@@ -510,6 +533,9 @@ local function onPartyKill(attacker, target)
 	local kind = attackerKind(attacker)
 	if not kind or not inWorld() then
 		return
+	end
+	if kind ~= "group" then
+		SG.diag.mine = SG.diag.mine + 1
 	end
 	recentTargets[target] = t
 	local p = { target = target, kind = kind, zone = zoneName(), t = t }
@@ -638,6 +664,7 @@ end
 local HELP = {
 	"/gnomes  open the Production Report",
 	"/gnomes stats  your job title and numbers",
+	"/gnomes status  is it working? kills seen, guildmates heard, version",
 	"/gnomes board  this week's top 10 in chat",
 	"/gnomes recalls  list open Recall Notices",
 	"/gnomes recall <name> [reward]  officers: post a Recall Notice (or target the player)",
@@ -680,6 +707,39 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 				or "Using the live guild crest (falls back to the logo file if the game doesn't provide it).")
 		else
 			ns.UI.ShowCrestSheet()
+		end
+	elseif cmd == "status" then
+		local d = SG.diag
+		SG.print(("Version %s. You are %s%s."):format(SG.RELEASE, tostring(SG.myName),
+			SG.myRealm() and "" or " (the game reports no realm, which is normal on Forever)"))
+		-- Guildmates running the addon, heard from this session.
+		local peers = {}
+		for name in pairs(d.peers) do
+			peers[#peers + 1] = SG.shortName(name)
+		end
+		table.sort(peers)
+		if #peers > 0 then
+			print(("  Guildmates with the addon heard this session: %d (%s)"):format(#peers, table.concat(peers, ", ")))
+		else
+			print("  No guildmates with the addon heard from this session. Only members who install it appear on the board.")
+		end
+		local known = 0
+		for name, e in pairs(SG.db.players) do
+			if name ~= SG.myName and ((e.total or 0) > 0 or (e.assists or 0) > 0) then
+				known = known + 1
+			end
+		end
+		print(("  Guildmates on the board: %d"):format(known))
+		-- Kill detection.
+		print(("  Player kills seen this session: %d by you or your pet, %d kill events in total."):format(d.mine, d.events))
+		if d.last then
+			print(("  Last: %s (%s), %s, %s."):format(d.last.name, d.last.race, SG.ago(d.last.t),
+				d.last.counted and "counted" or "not a gnome, not counted"))
+		elseif d.events == 0 then
+			print("  No kill events yet. Kill any enemy player in the open world and run this again: the count should go up.")
+		end
+		if (d.secret or 0) > 0 then
+			print(("  %d kill event(s) were unreadable (combat restriction)."):format(d.secret))
 		end
 	elseif cmd == "tipdebug" then
 		ns.UI.TipDebug()

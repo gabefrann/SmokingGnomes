@@ -361,6 +361,8 @@ function Sync.OnMessage(prefix, text, channel, sender)
 	if not sender or sender == SG.myName then
 		return
 	end
+	SG.diag.msgs = SG.diag.msgs + 1
+	SG.diag.peers[sender] = SG.now()
 
 	local p = { strsplit("|", text) }
 	local kind = p[1]
@@ -381,8 +383,9 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		local since = tonumber(p[3])
 		scheduleRelay(sender, (since and since > 0) and since or nil)
 	elseif kind == "R" and #p == 4 + SG.FIELD_COUNT then
+		-- Names may come without a realm: WoW Forever doesn't report one.
 		local name = p[3]
-		if not name or not name:find("-", 1, true) then
+		if not name or name == "" then
 			return
 		end
 		local raw = table.concat(p, "|", 4, 3 + SG.FIELD_COUNT)

@@ -848,7 +848,7 @@ local function tooltipPlayer(tt, data)
 	if not name then
 		return nil
 	end
-	local full = realm and (name .. "-" .. realm:gsub("[%s%-']", "")) or SG.fullName(name)
+	local full = SG.fullName(realm and (name .. "-" .. realm:gsub("[%s%-']", "")) or name)
 	return full, name, realm
 end
 
