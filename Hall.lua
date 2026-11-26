@@ -6,10 +6,10 @@
 --   W|version|week|winner|points|gnomes|prize|paid|by|paidBy|u|signature
 -- week = SG.weekId() of the week that was won (the day number of the reset ending it).
 --
--- Guild chat (visible to everyone, addon or not):
---   - your own gnome harvests (a setting, on by default; at most one post a minute),
+-- Guild chat (visible to everyone, addon or not), once a week at most:
 --   - the new Employee of the Week, posted by the officer whose addon records it,
 --   - the prize being paid, posted by the officer who marks it paid.
+-- Individual harvests are not posted: that was too much guild chat.
 
 local _, ns = ...
 local SG = ns.SG
@@ -20,7 +20,6 @@ ns.Hall = Hall
 local START_WEEK = 20789        -- the week ending 2 Dec 2026 is the first in the Hall of Fame
 local CHECK_DELAY = { 90, 150 } -- after login: wait for guildmates' numbers before naming a winner
 local CHECK_EVERY = 300         -- and look again every 5 minutes (catches the reset while online)
-local POST_GAP = 60             -- at most one harvest post a minute
 local POST_TRIES = 60           -- wait up to 2 minutes for combat to end before giving up
 local TAG = "Smoking Gnomes Inc.: "
 local INSTALL = "github.com/gabefrann/SmokingGnomes"
@@ -203,25 +202,6 @@ local function post(msg, tries)
 	end
 	local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
 	pcall(send, msg, "GUILD")
-end
-
-local lastPost = -POST_GAP
-local LINES = { "Sample sent to the lab.", "Quality control approved.", "Another batch for R&D." }
-
--- After one of my own gnome kills (not tests or assists).
-function Hall.PostHarvest(info)
-	if SG.db.settings.postHarvests == false or info.test or info.assist then
-		return
-	end
-	if GetTime() - lastPost < POST_GAP then
-		return -- the next post's weekly count covers this one
-	end
-	lastPost = GetTime()
-	local e = SG.me()
-	local lvl = info.level and (info.level < 0 and " (??)" or (" (" .. info.level .. ")")) or ""
-	local where = (info.zone and info.zone ~= "") and (" in " .. info.zone) or ""
-	post(("%s%s%s harvested%s. %s %d this week."):format(TAG, info.victim or "A gnome", lvl, where,
-		LINES[math.random(#LINES)], e.week or 0))
 end
 
 local function prizeText(h)

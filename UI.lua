@@ -480,8 +480,8 @@ local function buildSettings()
 		function() return (ns.Gank.SoundChoice()).label end, function() ns.Gank.CycleSound() end)
 	toggle("Popups", "Kills, promotions and callouts",
 		function() return s().toast ~= false end, function(v) s().toast = v end)
-	toggle("Guild chat posts", "Your harvests, for the whole guild",
-		function() return s().postHarvests ~= false end, function(v) s().postHarvests = v end)
+	toggle("Guildmates' kills", "Popup when a guildmate harvests one",
+		function() return s().guildHarvests == true end, function(v) s().guildHarvests = v end)
 	toggle("Login standings", "Top 3 in chat when you log in",
 		function() return s().loginStandings ~= false end, function(v) s().loginStandings = v end)
 	toggle("Minimap button", nil,

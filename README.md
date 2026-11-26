@@ -33,9 +33,8 @@ Last week's top harvester is **Employee of the Week** for the following week. Th
 - **Bonus:** officers set the weekly gold bonus with `/gnomes prize 50` (0 for none). It applies to the next winner, and to the latest one still unpaid. Pay it by hand, then type `/gnomes paid`: the Hall of Fame shows it as paid and guild chat gets a thank-you.
 - The Hall of Fame starts with the week ending 2 December 2026. Only the guild master and officers (the top two ranks) can name winners or mark bonuses paid; everyone's addon checks that against the guild roster.
 
-## Guild chat posts
-- Your gnome harvests are posted in guild chat, so guildmates without the addon see the company at work: "Smoking Gnomes Inc.: Fizzwick (42) harvested in Ashenvale. Sample sent to the lab. 3 this week." At most one post a minute; posts wait until you're out of combat.
-- Turn them off in Settings (**Guild chat posts**) or with `/gnomes post`.
+## Guildmates' kills
+- Off by default. Switch on **Guildmates' kills** in Settings to get a popup when a guildmate running the addon harvests a gnome ("Lih Zaddi smoked Fizzwick, in Felwood"). Nothing is posted in guild chat.
 
 ## Corporate Spies (bounties)
 - **Who can post:** the guild master and the rank directly below (guild rank index 0 and 1). To change this, edit `OFFICER_RANK` at the top of `Bounty.lua`.
@@ -111,7 +110,6 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70â
 | `/gnomes points` | How weekly points work |
 | `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
 | `/gnomes hall` | Open the Hall of Fame: every Employee of the Week and their bonus |
-| `/gnomes post` | Turn guild chat posts of your harvests on or off |
 | `/gnomes prize <gold>` | Officers: set the weekly bonus (0 for none) |
 | `/gnomes paid` | Officers: mark the latest bonus as paid |
 | `/gnomes spies` | List suspected corporate spies in chat |

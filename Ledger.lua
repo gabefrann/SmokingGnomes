@@ -16,6 +16,7 @@ ns.Ledger = Ledger
 local KEEP = 30 * 86400          -- how long individual kill records are stored
 local RELAY_DEFAULT = 7 * 86400  -- how far back to relay to someone whose last login is unknown
 local RELAY_SLACK = 3600         -- relay a little before their last login, to cover gaps
+local FRESH = 120                -- a guildmate's kill this recent can show a popup
 
 local FIELDS = { "id", "killer", "t", "victim", "vrealm", "zone" }
 
@@ -134,9 +135,16 @@ function Ledger.Receive(raw, sig)
 	end
 	ns.Sync.MarkHeard("kill", k.id, 1)
 	if add(k) then
+		local mine = k.killer == SG.myName or k.killer == SG.myFirstName()
 		-- One of my own kills I didn't have (another PC, or saved under my first name).
-		if (k.killer == SG.myName or k.killer == SG.myFirstName()) and SG.recountOwn() then
+		if mine and SG.recountOwn() then
 			ns.Sync.Queue()
+		end
+		-- A guildmate's kill made just now (not old ones relayed at login): an optional popup.
+		if not mine and SG.db.settings.guildHarvests and SG.now() - k.t < FRESH then
+			local where = (k.zone and k.zone ~= "") and k.zone or nil
+			ns.UI.Notice("Gnome harvested", "green", ("%s smoked %s"):format(SG.shortName(k.killer), k.victim),
+				where and ("In " .. where .. ". Sample sent to the lab.") or "Sample sent to the lab.")
 		end
 		ns.UI.Refresh()
 	end

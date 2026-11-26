@@ -611,7 +611,6 @@ function SG.recordKill(info)
 		ns.Ledger.Record(info.victim, info.realm, info.zone)
 	end
 	ns.UI.Toast(e, info)
-	ns.Hall.PostHarvest(info)
 	ns.UI.Refresh()
 	if not info.test then
 		ns.Sync.Queue()
@@ -1115,7 +1114,6 @@ local HELP = {
 	"/gnomes board  this week's top 10 in chat",
 	"/gnomes standings  the login message: top 3 and Employee of the Week",
 	"/gnomes hall  Hall of Fame: every Employee of the Week, and whether the bonus was paid",
-	"/gnomes post  turn posting your harvests in guild chat on or off",
 	"/gnomes prize <gold>  officers: the weekly Employee of the Week bonus (0 for none)",
 	"/gnomes paid  officers: mark the latest bonus as paid (thanks them in guild chat)",
 	"/gnomes spies  list suspected corporate spies",
@@ -1232,9 +1230,6 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "paid" then
 		local ok, text = ns.Hall.MarkPaid()
 		SG.print(text)
-	elseif cmd == "post" then
-		SG.db.settings.postHarvests = SG.db.settings.postHarvests == false
-		SG.print("Posting your harvests in guild chat: " .. (SG.db.settings.postHarvests and "on." or "off."))
 	elseif cmd == "who" and SG.RELEASE == "dev" then
 		-- Dev builds only: released copies just answer the question (see Sync.lua).
 		ns.Sync.Who()
