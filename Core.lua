@@ -611,6 +611,7 @@ function SG.recordKill(info)
 		ns.Ledger.Record(info.victim, info.realm, info.zone)
 	end
 	ns.UI.Toast(e, info)
+	ns.Hall.PostHarvest(info)
 	ns.UI.Refresh()
 	if not info.test then
 		ns.Sync.Queue()
@@ -987,7 +988,8 @@ function SG.ranked(mode)
 	return rows
 end
 
--- Most points last week (gnomes break a tie). Returns the name and their points as text.
+-- Most points last week (gnomes break a tie). Returns the name, their points as text,
+-- their points in quarters and their gnome count.
 function SG.lastWeekWinner()
 	local cur, best, bestP, bestN = SG.weekId(), nil, 0, 0
 	for name, e in pairs(SG.db.players) do
@@ -996,7 +998,7 @@ function SG.lastWeekWinner()
 			best, bestP, bestN = name, p, n
 		end
 	end
-	return best, SG.points(bestP)
+	return best, SG.points(bestP), bestP, bestN
 end
 
 ---------------------------------------------------------------------------
@@ -1112,6 +1114,10 @@ local HELP = {
 	"/gnomes status  is it working? kills seen, guildmates heard, version",
 	"/gnomes board  this week's top 10 in chat",
 	"/gnomes standings  the login message: top 3 and Employee of the Week",
+	"/gnomes hall  Hall of Fame: every Employee of the Week, and whether the bonus was paid",
+	"/gnomes post  turn posting your harvests in guild chat on or off",
+	"/gnomes prize <gold>  officers: the weekly Employee of the Week bonus (0 for none)",
+	"/gnomes paid  officers: mark the latest bonus as paid (thanks them in guild chat)",
 	"/gnomes spies  list suspected corporate spies",
 	"/gnomes spy <name> [reward]  officers: report a corporate spy (or target the player)",
 	"/gnomes spy cancel <name>  officers: withdraw your report",
@@ -1129,6 +1135,7 @@ local HELP = {
 	"/gnomes test  show a fake kill (doesn't change your numbers)",
 	"/gnomes test promo  show a fake promotion",
 	"/gnomes test gank  show a fake spotted gnome",
+	"/gnomes test hall  preview the Hall of Fame with a made-up winner (not shared)",
 	"/gnomes check  self-test the anti-tamper signing",
 }
 
@@ -1217,6 +1224,17 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "version" then
 		SG.print(("You have %s.%s"):format(SG.RELEASE,
 			SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) and (" " .. SG.latestRelease .. " is out.") or ""))
+	elseif cmd == "hall" or cmd == "fame" then
+		ns.UI.ShowView("hall", true)
+	elseif cmd == "prize" or cmd == "bonus" then
+		local ok, text = ns.Hall.SetPrize((msg or ""):match("^%s*%S+%s+(%S+)"))
+		SG.print(text)
+	elseif cmd == "paid" then
+		local ok, text = ns.Hall.MarkPaid()
+		SG.print(text)
+	elseif cmd == "post" then
+		SG.db.settings.postHarvests = SG.db.settings.postHarvests == false
+		SG.print("Posting your harvests in guild chat: " .. (SG.db.settings.postHarvests and "on." or "off."))
 	elseif cmd == "who" and SG.RELEASE == "dev" then
 		-- Dev builds only: released copies just answer the question (see Sync.lua).
 		ns.Sync.Who()
@@ -1286,6 +1304,8 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			or ("Check FAILED (roundtrip=%s edited=%s othername=%s own=%s recalls=%s)"):format(tostring(roundTrip ~= nil), tostring(edited ~= nil), tostring(otherName ~= nil), tostring(ownOk), tostring(recallsOk)))
 		local officer = SG.IsOfficer(SG.myName)
 		SG.print("Corporate spies: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " report them.")
+	elseif cmd == "test" and (msg or ""):lower():find("hall", 1, true) then
+		ns.Hall.Test()
 	elseif cmd == "test" and (msg or ""):lower():find("gank", 1, true) then
 		if not SG.db.settings.gank then
 			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")
@@ -1393,6 +1413,7 @@ f:SetScript("OnEvent", function(_, event, ...)
 		ns.UI.Init()
 		ns.Gank.Init()
 		ns.Sync.Start()
+		ns.Hall.Start()
 		C_Timer.NewTicker(30, function()
 			SG.db.lastOnline = SG.now()
 			resolvePending()

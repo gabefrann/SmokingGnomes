@@ -388,27 +388,28 @@ end
 
 local function buildSettings()
 	settingsPanel = CreateFrame("Frame", nil, frame)
-	settingsPanel:SetPoint("TOPLEFT", PAD, -94)
+	settingsPanel:SetPoint("TOPLEFT", PAD, -62) -- the tabs are hidden on this view
 	settingsPanel:SetPoint("BOTTOMRIGHT", -PAD, 40)
 	local width = W - PAD * 2
 	local y = 0
 	local updaters = {}
 
-	local function label(title, note)
+	-- controlWidth: space the control on the right takes, so the note never runs under it
+	local function label(title, note, controlWidth)
 		local l = text(settingsPanel, 12, TEXT)
 		l:SetPoint("TOPLEFT", 0, y)
 		l:SetText(title)
 		if note then
 			local n = text(settingsPanel, 10, MUTED)
 			n:SetPoint("TOPLEFT", 0, y - 15)
-			n:SetWidth(150)
+			n:SetWidth(width - controlWidth - 8)
 			n:SetText(note)
 		end
 	end
 
 	-- [-] value [+]
 	local function stepper(title, note, get, set, step, min, max, fmt)
-		label(title, note)
+		label(title, note, 104)
 		local value = text(settingsPanel, 12, TEXT, "CENTER")
 		local plus = flatButton(settingsPanel, 22, "+")
 		plus:SetPoint("TOPRIGHT", 0, y + 2)
@@ -427,12 +428,12 @@ local function buildSettings()
 		updaters[#updaters + 1] = function()
 			value:SetText(fmt(get()))
 		end
-		y = y - 31 -- 8 settings fit the window
+		y = y - 31 -- 9 settings fit the window (it uses the tabs' space)
 	end
 
 	-- On / Off
 	local function toggle(title, note, get, set)
-		label(title, note)
+		label(title, note, 50)
 		local b = flatButton(settingsPanel, 50, "")
 		b:SetPoint("TOPRIGHT", 0, y + 2)
 		b:SetScript("OnClick", function()
@@ -444,12 +445,12 @@ local function buildSettings()
 			b.label:SetText(on and "On" or "Off")
 			b.label:SetTextColor(unpack(on and ACCENT or MUTED))
 		end
-		y = y - 31 -- 8 settings fit the window
+		y = y - 31 -- 9 settings fit the window (it uses the tabs' space)
 	end
 
 	-- A button showing the current choice; clicking steps to the next one.
 	local function cycler(title, note, current, step)
-		label(title, note)
+		label(title, note, 50)
 		local b = flatButton(settingsPanel, 50, "")
 		b:SetPoint("TOPRIGHT", 0, y + 2)
 		b:SetScript("OnClick", function()
@@ -461,13 +462,13 @@ local function buildSettings()
 			b.label:SetText(v)
 			b.label:SetTextColor(unpack(v == "Off" and MUTED or ACCENT))
 		end
-		y = y - 31 -- 8 settings fit the window
+		y = y - 31 -- 9 settings fit the window (it uses the tabs' space)
 	end
 
 	local s = function() return SG.db.settings end
 	local pct = function(v) return math.floor(v * 100 + 0.5) .. "%" end
 
-	stepper("Window size", "This window and the gank panel",
+	stepper("Window size", "Window and gank panel",
 		function() return s().scale or 1 end, function(v) s().scale = v end, 0.1, 0.7, 1.5, pct)
 	stepper("Background opacity", "Text stays fully visible",
 		function() return s().opacity or 0.98 end, function(v) s().opacity = v end, 0.1, 0, 1, pct)
@@ -479,6 +480,8 @@ local function buildSettings()
 		function() return (ns.Gank.SoundChoice()).label end, function() ns.Gank.CycleSound() end)
 	toggle("Popups", "Kills, promotions and callouts",
 		function() return s().toast ~= false end, function(v) s().toast = v end)
+	toggle("Guild chat posts", "Your harvests, for the whole guild",
+		function() return s().postHarvests ~= false end, function(v) s().postHarvests = v end)
 	toggle("Login standings", "Top 3 in chat when you log in",
 		function() return s().loginStandings ~= false end, function(v) s().loginStandings = v end)
 	toggle("Minimap button", nil,
@@ -631,6 +634,23 @@ local function build()
 	sub = text(frame, 11, MUTED)
 	sub:SetPoint("TOPLEFT", PAD + 40, -31)
 	sub:SetPoint("RIGHT", -PAD, 0)
+	-- Clicking the Employee of the Week line opens the Hall of Fame.
+	local subBtn = CreateFrame("Button", nil, frame)
+	subBtn:SetPoint("TOPLEFT", sub, "TOPLEFT", 0, 3)
+	subBtn:SetPoint("BOTTOMRIGHT", sub, "BOTTOMRIGHT", 0, -3)
+	subBtn:SetScript("OnClick", function()
+		if mode == "settings" then
+			return
+		end
+		UI.ShowView("hall", mode ~= "hall")
+	end)
+	subBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine("Hall of Fame", 1, 1, 1)
+		GameTooltip:AddLine("Every Employee of the Week, and their bonus.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:Show()
+	end)
+	subBtn:SetScript("OnLeave", GameTooltip_Hide)
 
 	local GAP = 11
 	tabs = { makeTab("Weekly", "week", PAD) }
@@ -644,6 +664,7 @@ local function build()
 	tabs[5] = makeTab("Lab Log", "mine", x)
 
 	local div = rect(frame, BORDER[1], BORDER[2], BORDER[3], 0.6, "ARTWORK")
+	frame.tabDiv = div
 	div:SetHeight(1)
 	div:SetPoint("TOPLEFT", PAD, -82)
 	div:SetPoint("TOPRIGHT", -PAD, -82)
@@ -944,6 +965,58 @@ local function refreshMine()
 	footerRight:SetText(progress or ("%d lifetime"):format(e.total))
 end
 
+---------------------------------------------------------------------------
+-- Hall of Fame
+---------------------------------------------------------------------------
+
+local function refreshHall()
+	setHeads("WEEK ENDING", "POINTS", "BONUS", -62)
+	rows[ROWS + 1]:Hide()
+	local list = ns.Hall.List()
+	for i = 1, ROWS do
+		local h, r = list[i], rows[i]
+		if h then
+			local e = SG.db.players[h.winner]
+			r:Show()
+			r.hl:SetShown(h.winner == SG.myName)
+			r.rank:SetText(STAR)
+			r.name:SetText(("|cff8c8c94%s|r  %s"):format(h.test and "Test" or ns.Hall.WeekLabel(h.week), SG.shortName(h.winner)))
+			r.name:SetTextColor(classColor(e and e.class))
+			r.name:SetAlpha(1)
+			r.kills:SetText(SG.points(h.pts))
+			local paid = (h.paid or 0) == 1
+			if (h.prize or 0) > 0 then
+				r.assists:SetText(h.prize .. "g " .. (paid and ICON_DONE or ""))
+				r.assists:SetTextColor(unpack(paid and ACCENT or GOLD))
+			else
+				r.assists:SetText("")
+			end
+			r.tipColor = GOLD
+			r.tip = { SG.shortName(h.winner), "Employee of the Week",
+				("Week ending %s: %s points, %d gnome%s"):format(ns.Hall.WeekLabel(h.week), SG.points(h.pts), h.n, h.n == 1 and "" or "s"),
+				("Named by %s"):format(SG.shortName(h.by)) }
+			if (h.prize or 0) > 0 then
+				r.tip[#r.tip + 1] = paid and ("Bonus of %dg paid by %s"):format(h.prize, SG.shortName(h.paidBy))
+					or ("Bonus of %dg not paid yet"):format(h.prize)
+			end
+		else
+			r:Hide()
+		end
+	end
+	colHeads:SetShown(#list > 0)
+	empty:SetShown(#list == 0)
+	empty:SetText("No Employees of the Week yet.\n\n|cff8c8c94The first is named after the weekly\nreset on 2 December.|r")
+	local wins = 0
+	for _, h in ipairs(list) do
+		if h.winner == SG.myName then
+			wins = wins + 1
+		end
+	end
+	local prize = ns.Hall.Prize()
+	footer:SetText(wins > 0 and ("You've won %d time%s"):format(wins, wins == 1 and "" or "s") or "Hall of Fame")
+	footerRight:SetText(SG.IsOfficer(SG.myName) == true and (prize > 0 and ("Bonus: %dg"):format(prize) or "/gnomes prize") or "")
+end
+
 function UI.Refresh()
 	if not frame or not frame:IsShown() then
 		return
@@ -957,11 +1030,14 @@ function UI.Refresh()
 		company = company + (SG.weekCounts(e, cur))
 	end
 	companyLine:SetText(("Employees harvested |cff%s%d|r gnome%s this week"):format(hex(GOLD), company, company == 1 and "" or "s"))
+	local settingsView = mode == "settings"
 	for _, t in ipairs(tabs) do
 		local active = t.key == mode
 		t.label:SetTextColor(unpack(active and TEXT or MUTED))
 		t.line:SetShown(active)
+		t:SetShown(not settingsView) -- Settings uses the tabs' space
 	end
+	frame.tabDiv:SetShown(not settingsView)
 	local recall = mode == "recall"
 	for i = 1, ROWS + 1 do
 		layoutRow(rows[i], recall)
@@ -972,7 +1048,9 @@ function UI.Refresh()
 		form:Hide()
 	end
 
-	if champion then
+	if settingsView then
+		sub:SetText("Settings")
+	elseif champion then
 		local _, pts = SG.lastWeekWinner()
 		sub:SetText(("%s Employee of the Week: |cff%s%s|r (%s pts)"):format(STAR, hex(GOLD), SG.shortName(champion), pts))
 	else
@@ -1001,6 +1079,8 @@ function UI.Refresh()
 		refreshRecalls()
 	elseif mode == "mine" then
 		refreshMine()
+	elseif mode == "hall" then
+		refreshHall()
 	else
 		refreshBoard()
 	end
@@ -1020,7 +1100,7 @@ function UI.ShowView(view, show)
 		return
 	end
 	if show then
-		if mode ~= "help" and mode ~= "settings" then
+		if mode ~= "help" and mode ~= "settings" and mode ~= "hall" then
 			lastMode = mode
 		end
 		mode = view
@@ -1300,29 +1380,24 @@ local function buildMinimapButton()
 	b:RegisterForDrag("LeftButton")
 	b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-	-- Same geometry as LibDBIcon: the modern client centres everything in a 50px ring,
-	-- the Classic client uses offsets in a 53px ring.
-	local modern = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+	-- The standard gold minimap ring, exactly as LibDBIcon draws it, so the button matches
+	-- every other addon's. Media\minimap is the logo's white disc and gnome without the
+	-- logo's own bronze rim (that showed as a second ring inside this one).
+	-- Forever draws the modern ring art: measured against the other addons' buttons in
+	-- the same bar, the older "Classic" sizes (53 px ring, icon at 7,-6) came out bigger
+	-- and 1-2 px off. These are the sizes the other buttons use, on every client.
 	local bg = b:CreateTexture(nil, "BACKGROUND")
 	bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+	bg:SetSize(24, 24)
+	bg:SetPoint("CENTER", 0, 1)
 	local icon = b:CreateTexture(nil, "ARTWORK")
-	icon:SetTexture(LOGO)
+	icon:SetTexture("Interface\\AddOns\\SmokingGnomes\\Media\\minimap")
+	icon:SetSize(18, 18)
+	icon:SetPoint("CENTER", 0, 1)
 	local border = b:CreateTexture(nil, "OVERLAY")
 	border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+	border:SetSize(50, 50)
 	border:SetPoint("TOPLEFT")
-	if modern then
-		border:SetSize(50, 50)
-		bg:SetSize(24, 24)
-		bg:SetPoint("CENTER")
-		icon:SetSize(21, 21)
-		icon:SetPoint("CENTER")
-	else
-		border:SetSize(53, 53)
-		bg:SetSize(20, 20)
-		bg:SetPoint("TOPLEFT", 7, -5)
-		icon:SetSize(19, 19)
-		icon:SetPoint("TOPLEFT", 6, -6)
-	end
 
 	b:SetScript("OnClick", function(_, button)
 		if button == "LeftButton" and IsShiftKeyDown() then

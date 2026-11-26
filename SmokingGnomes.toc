@@ -13,5 +13,6 @@ Core.lua
 Sync.lua
 Bounty.lua
 Ledger.lua
+Hall.lua
 UI.lua
 Gank.lua

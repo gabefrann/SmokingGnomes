@@ -7,6 +7,7 @@
 --   R|version|Name-Realm|<11 fields>|signature  one player's numbers
 --   B|version|<8 fields>|signature              a Recall Notice (bounty), see Bounty.lua
 --   C|version|<6 fields>|signature              a claim on a Recall Notice
+--   W|version|<9 fields>|signature              a Hall of Fame week, see Hall.lua
 --   S|version|name|class|level|map              a gnome spotted in gank mode (not signed:
 --                                               display only, shown to members on that map)
 -- The owner of a record sends it when it changes. Anyone may relay any record, so news
@@ -64,6 +65,8 @@ local function messageFor(item)
 		return ns.Ledger.Message(item.key)
 	elseif item.kind == "spot" then
 		return ns.Gank.SpotMessage(item.key)
+	elseif item.kind == "fame" then
+		return ns.Hall.Message(item.key)
 	end
 end
 
@@ -76,6 +79,8 @@ local function versionOf(kind, key)
 		return SG.db.kills[key] and 1 or 0 -- kill records never change
 	elseif kind == "spot" then
 		return 1 -- a guildmate who just shared the same gnome makes mine unnecessary
+	elseif kind == "fame" then
+		return ns.Hall.Version(key)
 	end
 	return ns.Bounty.Version(kind, key)
 end
@@ -215,6 +220,9 @@ local function relayAll(first, since)
 		Sync.Enqueue("entry", first)
 	end
 	for _, rec in ipairs(ns.Bounty.RelayList()) do
+		Sync.Enqueue(rec[1], rec[2])
+	end
+	for _, rec in ipairs(ns.Hall.RelayList()) do
 		Sync.Enqueue(rec[1], rec[2])
 	end
 	local kills = ns.Ledger.RelayList(since)
@@ -502,6 +510,8 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		end
 		local raw = table.concat(p, "|", 4, #p - 1)
 		ingest(name, raw, p[#p], name == sender)
+	elseif kind == "W" then
+		ns.Hall.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
 	elseif kind == "K" then
 		ns.Ledger.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
 	elseif kind == "S" and #p == 6 then
