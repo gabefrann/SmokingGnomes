@@ -1,7 +1,9 @@
 -- Smoking Gnomes Inc.: guild sync with relay.
 --
 -- Messages (GUILD addon channel; every record is signed, see SG.sign in Core.lua):
---   H|version                                   "I just logged in"
+--   H|version|lastOnline|release                "I just logged in"
+--   Q|version                                   "who has the addon?" (/gnomes who)
+--   V|version|release                           my release (answer to H from older, or to Q)
 --   R|version|Name-Realm|<11 fields>|signature  one player's numbers
 --   B|version|<8 fields>|signature              a Recall Notice (bounty), see Bounty.lua
 --   C|version|<6 fields>|signature              a claim on a Recall Notice
@@ -48,6 +50,8 @@ end
 local function messageFor(item)
 	if item.kind == "hello" then
 		return "H|" .. SG.VERSION .. "|" .. (SG.prevOnline or 0) .. "|" .. SG.RELEASE
+	elseif item.kind == "query" then
+		return "Q|" .. SG.VERSION
 	elseif item.kind == "version" then
 		return "V|" .. SG.VERSION .. "|" .. SG.RELEASE
 	elseif item.kind == "entry" then
@@ -389,6 +393,67 @@ local function noteVersion(v)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Who has the addon (dev builds only). Every guildmate whose addon sends anything is
+-- noted, with the release they run when the message says it (H and V do). /gnomes who
+-- asks everyone online to answer; every copy answers, but only a dev build asks or keeps
+-- the list. Releases before 0.18 don't answer, but still appear when they log in.
+---------------------------------------------------------------------------
+
+local function noteInstall(name, release)
+	if SG.RELEASE ~= "dev" then
+		return
+	end
+	SG.db.installs = SG.db.installs or {}
+	local rec = SG.db.installs[name] or {}
+	rec.t = SG.now()
+	if type(release) == "string" and release ~= "" then
+		rec.r = release
+	end
+	SG.db.installs[name] = rec
+end
+
+local WHO_WAIT = 6
+local whoPending = false
+
+function Sync.Who()
+	if whoPending then
+		return
+	end
+	whoPending = true
+	local asked = SG.now()
+	Sync.Enqueue("query", nil, true, true)
+	SG.print("Asking the guild who has the addon...")
+	C_Timer.After(WHO_WAIT, function()
+		whoPending = false
+		local online, earlier = {}, {}
+		for name, rec in pairs(SG.db.installs or {}) do
+			if name ~= SG.myName then
+				local row = { name = name, r = rec.r or "?", t = rec.t or 0 }
+				if row.t >= asked then
+					online[#online + 1] = row
+				else
+					earlier[#earlier + 1] = row
+				end
+			end
+		end
+		table.sort(online, function(a, b) return a.name < b.name end)
+		table.sort(earlier, function(a, b) return a.t > b.t end)
+		SG.print(("%d guildmate%s with the addon (plus you, %s):"):format(#online + #earlier,
+			#online + #earlier == 1 and "" or "s", SG.RELEASE))
+		print(("  Online now: %d"):format(#online))
+		for _, row in ipairs(online) do
+			print(("    %s  %s"):format(SG.shortName(row.name), row.r))
+		end
+		if #earlier > 0 then
+			print(("  Seen before: %d"):format(#earlier))
+			for _, row in ipairs(earlier) do
+				print(("    %s  %s, %s"):format(SG.shortName(row.name), row.r, SG.ago(row.t)))
+			end
+		end
+	end)
+end
+
 function Sync.OnMessage(prefix, text, channel, sender)
 	if SG.secret(prefix) or SG.secret(text) or SG.secret(channel) or SG.secret(sender) then
 		return
@@ -405,6 +470,14 @@ function Sync.OnMessage(prefix, text, channel, sender)
 
 	local p = { strsplit("|", text) }
 	local kind = p[1]
+	noteInstall(sender, kind == "H" and p[4] or kind == "V" and p[3] or nil)
+	if kind == "Q" then
+		-- Someone ran /gnomes who: answer with my release after a short random wait.
+		C_Timer.After(math.random() * 3, function()
+			Sync.Enqueue("version", nil, false, true)
+		end)
+		return
+	end
 	if kind == "H" or kind == "V" then
 		local theirs = kind == "H" and p[4] or p[3]
 		noteVersion(theirs)

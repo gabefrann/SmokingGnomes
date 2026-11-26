@@ -1217,6 +1217,9 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "version" then
 		SG.print(("You have %s.%s"):format(SG.RELEASE,
 			SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) and (" " .. SG.latestRelease .. " is out.") or ""))
+	elseif cmd == "who" and SG.RELEASE == "dev" then
+		-- Dev builds only: released copies just answer the question (see Sync.lua).
+		ns.Sync.Who()
 	elseif cmd == "sync" then
 		ns.Sync.Hello()
 		SG.print("Asked the guild for numbers.")
@@ -1321,6 +1324,9 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		end
 		for _, line in ipairs(HELP) do
 			print(line)
+		end
+		if SG.RELEASE == "dev" then
+			print("/gnomes who  (dev build) who in the guild has the addon, and which version")
 		end
 		ns.UI.ShowHelp(true)
 	end
