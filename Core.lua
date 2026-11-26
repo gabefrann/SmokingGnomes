@@ -238,9 +238,11 @@ function SG.rollWeek(e)
 	local cur = SG.weekId()
 	if e.weekId ~= cur then
 		if e.weekId == cur - 7 then
-			e.prevWeek, e.prevWeekId, e.pp = e.week or 0, e.weekId, e.wp or 0
+			e.prevWeek, e.prevWeekId, e.pp, e.ph = e.week or 0, e.weekId, e.wp or 0, e.hw or 0
+		else
+			e.ph = 0
 		end
-		e.week, e.wa, e.wp, e.aw, e.weekId = 0, 0, 0, 0, cur
+		e.week, e.wa, e.wp, e.aw, e.hw, e.weekId = 0, 0, 0, 0, 0, cur
 	end
 end
 
@@ -336,11 +338,15 @@ local SALT = "SmokingGnomes|v2|gnomes-first|lok'tar"
 -- older versions have 11 fields and count each gnome as 1 point).
 -- ak / aw: Alliance players killed, lifetime and this week, gnomes included (added in
 -- 0.17; older entries have 11 or 13 fields and count only their gnomes).
-local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim", "wp", "pp", "ak", "aw" }
+-- hk / hw / ph: honorable gnomes (not grey to the killer), lifetime, this week and last
+-- week. They decide job titles and salaries (added in 0.20; older entries have up to
+-- 15 fields and count all their gnomes as honorable, since their levels aren't known).
+local FIELDS = { "total", "week", "weekId", "assists", "wa", "prevWeek", "prevWeekId", "lastKill", "u", "class", "lastVictim", "wp", "pp", "ak", "aw", "hk", "hw", "ph" }
 local TEXT_FIELDS = { class = true, lastVictim = true } -- everything else is a whole number
 local OLD_FIELD_COUNT = 11
+local PVP_FIELD_COUNT = 15
 SG.FIELD_COUNT = #FIELDS
-SG.FIELD_COUNTS = { [11] = true, [13] = true, [#FIELDS] = true } -- formats still accepted
+SG.FIELD_COUNTS = { [11] = true, [13] = true, [15] = true, [#FIELDS] = true } -- formats still accepted
 
 local function hash(s)
 	local h1, h2 = 5381, 52711
@@ -394,15 +400,23 @@ function SG.decode(name, raw, sig)
 		-- From a version before points: each gnome counts as 1 point.
 		e.wp, e.pp = e.week * 4, e.prevWeek * 4
 	end
-	if #parts < #FIELDS then
+	if #parts < PVP_FIELD_COUNT then
 		-- From a version before Alliance kills: its gnomes are the only ones known.
 		e.ak, e.aw = e.total, e.week
+	end
+	if #parts < #FIELDS then
+		-- From a version before honorable kills: every gnome counts as honorable.
+		e.hk, e.hw, e.ph = e.total, e.week, e.prevWeek or 0
 	end
 	return e
 end
 
 -- Re-sign my own entry after any change.
 function SG.seal(e)
+	-- Gnomes counted before honorable kills existed are all honorable.
+	e.hk = e.hk or e.total or 0
+	e.hw = e.hw or e.week or 0
+	e.ph = e.ph or e.prevWeek or 0
 	local raw = SG.encode(e)
 	if raw ~= e.raw then
 		e.raw, e.sig = raw, SG.sign(SG.myName, raw)
@@ -459,8 +473,10 @@ function SG.adoptOwn(remote)
 			remote.wa = remote.wa + (e.wa or 0)
 			remote.wp = (remote.wp or 0) + (e.wp or 0)
 			remote.aw = (remote.aw or 0) + (e.aw or 0)
+			remote.hw = (remote.hw or 0) + (e.hw or 0)
 		end
 		remote.ak = (remote.ak or 0) + (e.ak or 0)
+		remote.hk = (remote.hk or 0) + (e.hk or 0)
 		if (e.lastKill or 0) > (remote.lastKill or 0) then
 			remote.lastKill, remote.lastVictim = e.lastKill, e.lastVictim
 		end
@@ -501,11 +517,13 @@ function SG.mergeLegacy(old)
 	up("total", old.total)
 	up("assists", old.assists)
 	up("ak", old.ak)
+	up("hk", old.hk)
 	if old.weekId == e.weekId then
 		up("week", old.week)
 		up("wa", old.wa)
 		up("wp", old.wp)
 		up("aw", old.aw)
+		up("hw", old.hw)
 	end
 	if old.prevWeekId and old.prevWeekId == e.weekId - 7 then
 		if e.prevWeekId ~= old.prevWeekId then
@@ -513,6 +531,7 @@ function SG.mergeLegacy(old)
 		end
 		up("prevWeek", old.prevWeek)
 		up("pp", old.pp)
+		up("ph", old.ph)
 	end
 	if (old.lastKill or 0) > (e.lastKill or 0) then
 		e.lastKill, e.lastVictim = old.lastKill, old.lastVictim
@@ -546,6 +565,7 @@ function SG.recountOwn()
 	end
 	if c.total > 0 then
 		c.ak, c.aw = c.total, c.week -- the ledger only holds gnomes: a lower bound
+		c.hk, c.hw = c.total, c.week -- and no levels: counted as honorable
 		return SG.mergeLegacy(c)
 	end
 	return false
@@ -582,10 +602,15 @@ function SG.recordKill(info)
 		e.wa = (e.wa or 0) + 1
 		e.u = t
 	else
-		local before = SG.jobTitle(SG.myName, e.total)
-		local after = SG.jobTitle(SG.myName, (e.total or 0) + 1)
-		if after ~= before then
-			info.promoted = after
+		info.honorable = SG.honorable(info.myLevel, info.level)
+		if info.honorable then
+			local before = SG.jobTitle(SG.myName, SG.honorCount(e))
+			local after = SG.jobTitle(SG.myName, SG.honorCount(e) + 1)
+			if after ~= before then
+				info.promoted = after
+			end
+			e.hk = SG.honorCount(e) + 1
+			e.hw = (e.hw or 0) + 1
 		end
 		e.total = (e.total or 0) + 1
 		e.week = (e.week or 0) + 1
@@ -1001,34 +1026,101 @@ function SG.lastWeekWinner()
 end
 
 ---------------------------------------------------------------------------
--- Job titles (by lifetime gnomes). CEO belongs to the guild master and can't be earned.
+-- Job titles and salaries, by lifetime honorable gnomes. CEO belongs to the guild
+-- master and can't be earned. Salary is in copper per week worked (see Payroll.lua).
 ---------------------------------------------------------------------------
 
 SG.TITLES = {
-	{ 0, "Unpaid Intern" },
-	{ 1, "Lab Assistant" },
-	{ 10, "Field Harvester" },
-	{ 25, "Pharmacist" },
-	{ 50, "Senior Chemist" },
-	{ 100, "Head of R&D" },
-	{ 250, "Chief Medical Officer" },
+	{ 0, "Unpaid Intern", 0 },
+	{ 1, "Lab Assistant", 0 },
+	{ 5, "Test Subject Handler", 1000 },  -- 10s
+	{ 10, "Field Harvester", 2500 },      -- 25s
+	{ 25, "Pharmacist", 5000 },           -- 50s
+	{ 50, "Senior Chemist", 7500 },       -- 75s
+	{ 75, "Lab Supervisor", 10000 },      -- 1g
+	{ 100, "Head of R&D", 15000 },        -- 1.5g
+	{ 150, "Regional Director", 20000 },  -- 2g
+	{ 250, "Chief Medical Officer", 30000 }, -- 3g
 }
 
--- Returns title, next title (or nil), gnomes still needed for it.
-function SG.jobTitle(name, total)
-	if name and SG.guildMaster and SG.sameName(name, SG.guildMaster) then
-		return "CEO"
+-- A gnome is honorable unless it was grey to you (the game's own rule). An unknown
+-- level counts as honorable: a missed level is the addon's fault, not yours.
+-- Level -1 means "??": far above you.
+function SG.grayLevel(lvl)
+	if lvl <= 5 then
+		return 0
+	elseif lvl <= 39 then
+		return lvl - 5 - math.floor(lvl / 10)
+	elseif lvl <= 60 then
+		return lvl - 1 - math.floor(lvl / 5)
 	end
-	total = total or 0
-	local title, nextTitle, need = SG.TITLES[1][2], nil, nil
+	return lvl - 9
+end
+
+function SG.honorable(mine, theirs)
+	if not mine or not theirs or mine <= 0 or theirs < 0 then
+		return true
+	end
+	return theirs > SG.grayLevel(mine)
+end
+
+-- Lifetime honorable gnomes (entries without the count: every gnome).
+function SG.honorCount(e)
+	return e and (e.hk or e.total) or 0
+end
+
+-- Honorable gnomes in the week before `cur`.
+function SG.lastWeekHonor(e, cur)
+	local lw = cur - 7
+	if e.weekId == lw then
+		return e.hw or e.week or 0
+	elseif e.prevWeekId == lw then
+		return e.ph or e.prevWeek or 0
+	end
+	return 0
+end
+
+-- Returns title, next title (or nil), honorable gnomes still needed for it, weekly
+-- salary in copper, and the next title's salary.
+function SG.jobTitle(name, honor)
+	if name and SG.guildMaster and SG.sameName(name, SG.guildMaster) then
+		return "CEO", nil, nil, 0, nil
+	end
+	honor = honor or 0
+	local title, nextTitle, need, pay, nextPay = SG.TITLES[1][2], nil, nil, 0, nil
 	for i, t in ipairs(SG.TITLES) do
-		if total >= t[1] then
-			title = t[2]
+		if honor >= t[1] then
+			title, pay = t[2], t[3]
 			local n = SG.TITLES[i + 1]
-			nextTitle, need = n and n[2], n and (n[1] - total)
+			nextTitle, need, nextPay = n and n[2], n and (n[1] - honor), n and n[3]
 		end
 	end
-	return title, nextTitle, need
+	return title, nextTitle, need, pay, nextPay
+end
+
+-- The ladder as text lines: { left, right, isMine } per title, mine marked.
+function SG.ladderLines()
+	local honor = SG.honorCount(SG.db.players[SG.myName])
+	local mine = SG.jobTitle(SG.myName, honor)
+	local out = {}
+	for _, t in ipairs(SG.TITLES) do
+		out[#out + 1] = { ("%d  %s"):format(t[1], t[2]), t[3] > 0 and (SG.money(t[3]) .. " a week") or "unpaid", t[2] == mine }
+	end
+	return out, honor, mine
+end
+
+-- "1g 50s", "25s", "-"
+function SG.money(copper)
+	copper = math.floor(copper or 0)
+	if copper <= 0 then
+		return "-"
+	end
+	local g, s, c = math.floor(copper / 10000), math.floor(copper % 10000 / 100), copper % 100
+	local out = {}
+	if g > 0 then out[#out + 1] = g .. "g" end
+	if s > 0 then out[#out + 1] = s .. "s" end
+	if c > 0 and g == 0 then out[#out + 1] = c .. "c" end
+	return table.concat(out, " ")
 end
 
 -- Last week's winner is this week's Employee of the Week.
@@ -1113,9 +1205,12 @@ local HELP = {
 	"/gnomes status  is it working? kills seen, guildmates heard, version",
 	"/gnomes board  this week's top 10 in chat",
 	"/gnomes standings  the login message: top 3 and Employee of the Week",
-	"/gnomes hall  Hall of Fame: every Employee of the Week, and whether the bonus was paid",
 	"/gnomes prize <gold>  officers: the weekly Employee of the Week bonus (0 for none)",
 	"/gnomes paid  officers: mark the latest bonus as paid (thanks them in guild chat)",
+	"/gnomes ranks  every job title, the gnomes it takes and its weekly salary",
+	"/gnomes payroll  last week's salaries: who earned what (open to everyone)",
+	"/gnomes payroll paid  officers: mark last week's payroll as paid (employees get a popup)",
+	"/gnomes payroll cap <gold>  officers: the most payroll may cost in a week (0 for no cap)",
 	"/gnomes spies  list suspected corporate spies",
 	"/gnomes spy <name> [reward]  officers: report a corporate spy (or target the player)",
 	"/gnomes spy cancel <name>  officers: withdraw your report",
@@ -1133,7 +1228,6 @@ local HELP = {
 	"/gnomes test  show a fake kill (doesn't change your numbers)",
 	"/gnomes test promo  show a fake promotion",
 	"/gnomes test gank  show a fake spotted gnome",
-	"/gnomes test hall  preview the Hall of Fame with a made-up winner (not shared)",
 	"/gnomes check  self-test the anti-tamper signing",
 }
 
@@ -1145,10 +1239,13 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 		ns.UI.Toggle()
 	elseif cmd == "stats" then
 		local e = SG.me()
-		local title, nextTitle, need = SG.jobTitle(SG.myName, e.total)
-		SG.print(("%s. %d this week (%s points), %d lifetime, %d assists. Last harvest %s."):format(title, e.week, SG.points(e.wp), e.total, e.assists or 0, SG.ago(e.lastKill)))
+		local title, nextTitle, need, pay, nextPay = SG.jobTitle(SG.myName, SG.honorCount(e))
+		SG.print(("%s. %d this week (%s points), %d lifetime (%d honorable), %d assists. Last harvest %s."):format(title, e.week, SG.points(e.wp), e.total, SG.honorCount(e), e.assists or 0, SG.ago(e.lastKill)))
+		if pay > 0 then
+			SG.print(("Salary: %s for every week you harvest an honorable gnome."):format(SG.money(pay)))
+		end
 		if nextTitle then
-			SG.print(("%d more gnome%s to %s."):format(need, need == 1 and "" or "s", nextTitle))
+			SG.print(("%d more honorable gnome%s to %s (%s a week)."):format(need, need == 1 and "" or "s", nextTitle, SG.money(nextPay)))
 		end
 	elseif cmd == "board" then
 		printBoard()
@@ -1222,11 +1319,20 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "version" then
 		SG.print(("You have %s.%s"):format(SG.RELEASE,
 			SG.latestRelease and SG.newer(SG.latestRelease, SG.RELEASE) and (" " .. SG.latestRelease .. " is out.") or ""))
-	elseif cmd == "hall" or cmd == "fame" then
-		ns.UI.ShowView("hall", true)
 	elseif cmd == "prize" or cmd == "bonus" then
 		local ok, text = ns.Hall.SetPrize((msg or ""):match("^%s*%S+%s+(%S+)"))
 		SG.print(text)
+	elseif cmd == "payroll" or cmd == "salary" or cmd == "salaries" then
+		local arg, val = (msg or ""):lower():match("^%s*%S+%s+(%S+)%s*(%S*)")
+		if arg == "paid" then
+			local _, text = ns.Payroll.MarkPaid()
+			SG.print(text)
+		elseif arg == "cap" then
+			local _, text = ns.Payroll.SetCap(val)
+			SG.print(text)
+		else
+			ns.UI.ShowView("payroll", true)
+		end
 	elseif cmd == "paid" then
 		local ok, text = ns.Hall.MarkPaid()
 		SG.print(text)
@@ -1299,8 +1405,6 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			or ("Check FAILED (roundtrip=%s edited=%s othername=%s own=%s recalls=%s)"):format(tostring(roundTrip ~= nil), tostring(edited ~= nil), tostring(otherName ~= nil), tostring(ownOk), tostring(recallsOk)))
 		local officer = SG.IsOfficer(SG.myName)
 		SG.print("Corporate spies: you " .. (officer and "can" or officer == false and "can't" or "may (roster still loading)") .. " report them.")
-	elseif cmd == "test" and (msg or ""):lower():find("hall", 1, true) then
-		ns.Hall.Test()
 	elseif cmd == "test" and (msg or ""):lower():find("gank", 1, true) then
 		if not SG.db.settings.gank then
 			SG.print("Turn gank mode on first (/gnomes gank) to see the panel.")
@@ -1316,10 +1420,17 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 	elseif cmd == "test" then
 		local info = { victim = "Test Gnome", zone = zoneName(), test = true }
 		if (msg or ""):lower():find("promo", 1, true) then
-			local _, nextTitle = SG.jobTitle(SG.myName, SG.me().total)
+			local _, nextTitle = SG.jobTitle(SG.myName, SG.honorCount(SG.me()))
 			info.promoted = nextTitle or "Chief Medical Officer"
 		end
 		SG.recordKill(info)
+	elseif cmd == "ranks" or cmd == "titles" or cmd == "ladder" then
+		local lines, honor, mine = SG.ladderLines()
+		SG.print(("Job titles by lifetime honorable gnomes (you: %d, %s):"):format(honor, mine))
+		for _, l in ipairs(lines) do
+			print(("  %s%s  ·  %s%s"):format(l[3] and "|cffffd14d" or "", l[1], l[2], l[3] and "  < you|r" or ""))
+		end
+		print("  Salary is paid for each week with at least one honorable gnome. The guild master is CEO.")
 	elseif cmd == "points" then
 		SG.print("Weekly points: each gnome you kill scores by its level against yours.")
 		for _, p in ipairs(SG.POINTS) do

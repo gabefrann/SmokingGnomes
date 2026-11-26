@@ -12,26 +12,38 @@ The guild's gnome-harvesting Production Report: a leaderboard for gnomes killed 
 
 Log in, then type `/gnomes` or click the addon button next to the minimap. If someone in the guild has a newer version, the addon tells you once per session.
 
-## Job titles
-Your title is based on lifetime gnomes. It shows on the Production Report, and in your tooltip to every guildmate running the addon.
+## Job titles and salaries
+Your title is based on lifetime **honorable** gnomes: a gnome counts unless it was grey to you (the game's own rule; at level 60, gnomes of level 47 and below are grey). Grey gnomes still score weekly points and count on the PvP tab, but they don't move you up the ladder. If the addon couldn't read a gnome's level, it counts as honorable. Gnomes from before 0.20 all count as honorable, since their levels weren't recorded.
 
-| Lifetime gnomes | Title |
-|---|---|
-| 0 | Unpaid Intern |
-| 1 | Lab Assistant |
-| 10 | Field Harvester |
-| 25 | Pharmacist |
-| 50 | Senior Chemist |
-| 100 | Head of R&D |
-| 250 | Chief Medical Officer |
-| Guild master | CEO |
+| Honorable gnomes | Title | Salary per week |
+|---|---|---|
+| 0 | Unpaid Intern | - |
+| 1 | Lab Assistant | - |
+| 5 | Test Subject Handler | 10s |
+| 10 | Field Harvester | 25s |
+| 25 | Pharmacist | 50s |
+| 50 | Senior Chemist | 75s |
+| 75 | Lab Supervisor | 1g |
+| 100 | Head of R&D | 1.5g |
+| 150 | Regional Director | 2g |
+| 250 | Chief Medical Officer | 3g |
+| Guild master | CEO | - |
+
+Your title shows on the Production Report, and in your tooltip to every guildmate running the addon. `/gnomes ranks` prints this table in game, and hovering your line at the bottom of the Payroll view shows it too.
+
+## Payroll
+- **No work, no pay:** your salary is owed only for a week in which you harvested at least one honorable gnome. Inactive members cost nothing.
+- After each weekly reset, the **Payroll** view lists last week's salaries: click the gold coin at the top of the window, or type `/gnomes payroll`. Everyone can see it.
+- Officers pay by hand (mail), then type `/gnomes payroll paid`. Everyone on that payroll gets a popup. Nothing is posted in guild chat.
+- **Budget cap:** `/gnomes payroll cap 25` limits the payroll to 25g a week. Above that, every salary is cut by the same share and the Payroll view says so. `0` removes the cap.
+- The first payroll is for the week ending 2 December 2026. Until then, the Payroll view previews the current week.
 
 Last week's top harvester is **Employee of the Week** for the following week. They get a star on the board and a line in their tooltip.
 
-## Hall of Fame and the weekly bonus
-- After each weekly reset, the addon of the first guild master or officer online names last week's top scorer **Employee of the Week**, posts it in guild chat, and adds the week to the **Hall of Fame**. Click the Employee of the Week line at the top of the window (or type `/gnomes hall`) to see every past winner.
-- **Bonus:** officers set the weekly gold bonus with `/gnomes prize 50` (0 for none). It applies to the next winner, and to the latest one still unpaid. Pay it by hand, then type `/gnomes paid`: the Hall of Fame shows it as paid and guild chat gets a thank-you.
-- The Hall of Fame starts with the week ending 2 December 2026. Only the guild master and officers (the top two ranks) can name winners or mark bonuses paid; everyone's addon checks that against the guild roster.
+## Employee of the Week bonus
+- After each weekly reset, the addon of the first guild master or officer online names last week's top scorer **Employee of the Week** and posts it in guild chat (one line a week).
+- **Bonus:** officers set the weekly gold bonus with `/gnomes prize 50` (0 for none). It applies to the next winner, and to the latest one still unpaid. Pay it by hand, then type `/gnomes paid`: guild chat gets a thank-you.
+- Starts with the week ending 2 December 2026. Only the guild master and officers (the top two ranks) can name winners or mark bonuses paid; everyone's addon checks that against the guild roster. Every week's winner is kept, for a Hall of Fame later.
 
 ## Guildmates' kills
 - Off by default. Switch on **Guildmates' kills** in Settings to get a popup when a guildmate running the addon harvests a gnome ("Lih Zaddi smoked Fizzwick, in Felwood"). Nothing is posted in guild chat.
@@ -109,9 +121,12 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70â
 | `/gnomes board` | Print this week's top 10 in chat |
 | `/gnomes points` | How weekly points work |
 | `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
-| `/gnomes hall` | Open the Hall of Fame: every Employee of the Week and their bonus |
 | `/gnomes prize <gold>` | Officers: set the weekly bonus (0 for none) |
 | `/gnomes paid` | Officers: mark the latest bonus as paid |
+| `/gnomes ranks` | Every job title, the honorable gnomes it takes and its weekly salary, with your place marked |
+| `/gnomes payroll` | Open the Payroll view: last week's salaries |
+| `/gnomes payroll paid` | Officers: mark last week's payroll as paid |
+| `/gnomes payroll cap <gold>` | Officers: weekly payroll budget (0 for no cap) |
 | `/gnomes spies` | List suspected corporate spies in chat |
 | `/gnomes spy <name> [reward]` | Officers: report a corporate spy (leave the name out to use your target) |
 | `/gnomes spy cancel <name>` | Officers: withdraw your report |

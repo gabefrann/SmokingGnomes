@@ -8,6 +8,7 @@
 --   B|version|<8 fields>|signature              a Recall Notice (bounty), see Bounty.lua
 --   C|version|<6 fields>|signature              a claim on a Recall Notice
 --   W|version|<9 fields>|signature              a Hall of Fame week, see Hall.lua
+--   P|version|<6 fields>|signature              a week's payroll marked paid, see Payroll.lua
 --   S|version|name|class|level|map              a gnome spotted in gank mode (not signed:
 --                                               display only, shown to members on that map)
 -- The owner of a record sends it when it changes. Anyone may relay any record, so news
@@ -67,6 +68,8 @@ local function messageFor(item)
 		return ns.Gank.SpotMessage(item.key)
 	elseif item.kind == "fame" then
 		return ns.Hall.Message(item.key)
+	elseif item.kind == "payroll" then
+		return ns.Payroll.Message(item.key)
 	end
 end
 
@@ -81,6 +84,8 @@ local function versionOf(kind, key)
 		return 1 -- a guildmate who just shared the same gnome makes mine unnecessary
 	elseif kind == "fame" then
 		return ns.Hall.Version(key)
+	elseif kind == "payroll" then
+		return ns.Payroll.Version(key)
 	end
 	return ns.Bounty.Version(kind, key)
 end
@@ -225,6 +230,9 @@ local function relayAll(first, since)
 	for _, rec in ipairs(ns.Hall.RelayList()) do
 		Sync.Enqueue(rec[1], rec[2])
 	end
+	for _, rec in ipairs(ns.Payroll.RelayList()) do
+		Sync.Enqueue(rec[1], rec[2])
+	end
 	local kills = ns.Ledger.RelayList(since)
 	local list = {}
 	local cutoff = SG.now() - RELAY_MAX_AGE
@@ -308,6 +316,11 @@ local function plausible(old, new)
 	end
 	-- Alliance kills include the gnomes; this week's can't exceed the lifetime count.
 	if (new.ak or 0) < new.total or (new.aw or 0) < new.week or (new.aw or 0) > (new.ak or 0) then
+		return false
+	end
+	-- Honorable gnomes are a share of all gnomes.
+	if (new.hk or 0) > new.total or (new.hw or 0) > new.week or (new.hw or 0) > (new.hk or 0)
+		or (new.ph or 0) > (new.prevWeek or 0) then
 		return false
 	end
 	if new.weekId > SG.weekId() + 7 or new.u > SG.now() + 600 then
@@ -512,6 +525,8 @@ function Sync.OnMessage(prefix, text, channel, sender)
 		ingest(name, raw, p[#p], name == sender)
 	elseif kind == "W" then
 		ns.Hall.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
+	elseif kind == "P" then
+		ns.Payroll.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
 	elseif kind == "K" then
 		ns.Ledger.Receive(table.concat(p, "|", 3, #p - 1), p[#p])
 	elseif kind == "S" and #p == 6 then

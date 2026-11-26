@@ -327,7 +327,7 @@ local HELP = {
 	{ "/gnomes spy cancel Name", "Withdraw yours" },
 	{ "/gnomes sync", "Refresh from guild" },
 	{ "/gnomes test", "Preview a kill" },
-	{ "/gnomes check", "Self-test" },
+	{ "/gnomes ranks", "Titles and salaries" },
 } -- 12 lines fit the window; keep descriptions short enough not to be cut off
 local helpPanel, lastMode
 
@@ -631,27 +631,34 @@ local function build()
 	end)
 	frame.gear = gear
 
+	-- Coin: the Payroll view (last week's salaries).
+	local coin = CreateFrame("Button", nil, frame)
+	coin:SetSize(20, 20)
+	coin:SetPoint("RIGHT", gear, "LEFT", -2, 0)
+	coin.icon = coin:CreateTexture(nil, "ARTWORK")
+	coin.icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+	coin.icon:SetSize(13, 13)
+	coin.icon:SetPoint("CENTER")
+	coin.icon:SetDesaturated(true)
+	coin:SetScript("OnClick", function()
+		UI.ShowView("payroll", mode ~= "payroll")
+	end)
+	coin:SetScript("OnEnter", function(self)
+		self.icon:SetDesaturated(false)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Payroll", 1, 1, 1)
+		GameTooltip:AddLine("Salaries: who earned what last week.", MUTED[1], MUTED[2], MUTED[3])
+		GameTooltip:Show()
+	end)
+	coin:SetScript("OnLeave", function(self)
+		self.icon:SetDesaturated(mode ~= "payroll")
+		GameTooltip:Hide()
+	end)
+	frame.coin = coin
+
 	sub = text(frame, 11, MUTED)
 	sub:SetPoint("TOPLEFT", PAD + 40, -31)
 	sub:SetPoint("RIGHT", -PAD, 0)
-	-- Clicking the Employee of the Week line opens the Hall of Fame.
-	local subBtn = CreateFrame("Button", nil, frame)
-	subBtn:SetPoint("TOPLEFT", sub, "TOPLEFT", 0, 3)
-	subBtn:SetPoint("BOTTOMRIGHT", sub, "BOTTOMRIGHT", 0, -3)
-	subBtn:SetScript("OnClick", function()
-		if mode == "settings" then
-			return
-		end
-		UI.ShowView("hall", mode ~= "hall")
-	end)
-	subBtn:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:AddLine("Hall of Fame", 1, 1, 1)
-		GameTooltip:AddLine("Every Employee of the Week, and their bonus.", MUTED[1], MUTED[2], MUTED[3])
-		GameTooltip:Show()
-	end)
-	subBtn:SetScript("OnLeave", GameTooltip_Hide)
-
 	local GAP = 11
 	tabs = { makeTab("Weekly", "week", PAD) }
 	local x = PAD + tabs[1]:GetWidth() + GAP
@@ -702,6 +709,26 @@ local function build()
 
 	footer = text(frame, 11, TEXT)
 	footer:SetPoint("BOTTOMLEFT", PAD, 30)
+	-- On the Payroll view, hovering your line at the bottom shows the whole ladder.
+	local ladderTip = CreateFrame("Frame", nil, frame)
+	ladderTip:SetPoint("BOTTOMLEFT", PAD, 24)
+	ladderTip:SetSize(150, 16)
+	ladderTip:EnableMouse(true)
+	ladderTip:SetScript("OnEnter", function(self)
+		if mode ~= "payroll" then
+			return
+		end
+		local lines, honor = SG.ladderLines()
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine("Job titles and salaries", 1, 1, 1)
+		GameTooltip:AddLine(("By lifetime honorable gnomes. You have %d."):format(honor), MUTED[1], MUTED[2], MUTED[3])
+		for _, l in ipairs(lines) do
+			local c = l[3] and GOLD or TEXT
+			GameTooltip:AddDoubleLine(l[1], l[2], c[1], c[2], c[3], c[1], c[2], c[3])
+		end
+		GameTooltip:Show()
+	end)
+	ladderTip:SetScript("OnLeave", GameTooltip_Hide)
 	footerRight = text(frame, 11, MUTED, "RIGHT")
 	footerRight:SetPoint("BOTTOMRIGHT", -PAD, 30)
 
@@ -744,7 +771,10 @@ local function setRow(r, rank, name, kills, assists, e, isMe)
 	r.kills:SetText(kills)
 	r.assists:SetText(assists > 0 and assists or "")
 
-	local title = SG.jobTitle(name, e and e.total)
+	local title, _, _, pay = SG.jobTitle(name, SG.honorCount(e))
+	if pay > 0 then
+		title = title .. "  ·  " .. SG.money(pay) .. " a week"
+	end
 	if name == champion then
 		title = title .. "  ·  Employee of the Week"
 	end
@@ -773,9 +803,9 @@ local function setRow(r, rank, name, kills, assists, e, isMe)
 end
 
 local function myCareer(e)
-	local title, nextTitle, need = SG.jobTitle(SG.myName, e.total)
+	local title, nextTitle, need = SG.jobTitle(SG.myName, SG.honorCount(e))
 	if nextTitle then
-		return title, ("%d to %s"):format(need, nextTitle)
+		return title, ("%d honorable to %s"):format(need, nextTitle)
 	end
 	return title, nil
 end
@@ -966,38 +996,46 @@ local function refreshMine()
 end
 
 ---------------------------------------------------------------------------
--- Hall of Fame
+-- Payroll
 ---------------------------------------------------------------------------
 
-local function refreshHall()
-	setHeads("WEEK ENDING", "POINTS", "BONUS", -62)
+local function refreshPayroll()
+	setHeads("EMPLOYEE", "GNOMES", "SALARY", -62)
 	rows[ROWS + 1]:Hide()
-	local list = ns.Hall.List()
+	local week, preview = ns.Payroll.ViewWeek()
+	local record = not preview and ns.Payroll.Record(week)
+	local list, total, percent = ns.Payroll.Compute(week, preview, record and record.percent or nil)
+	local myRow
+	for i, row in ipairs(list) do
+		if row.name == SG.myName then
+			myRow = i
+		end
+	end
 	for i = 1, ROWS do
-		local h, r = list[i], rows[i]
-		if h then
-			local e = SG.db.players[h.winner]
+		local row, r = list[i], rows[i]
+		-- Keep my own row visible in the last line when I'm further down.
+		if i == ROWS and myRow and myRow > ROWS then
+			row = list[myRow]
+		end
+		if row then
 			r:Show()
-			r.hl:SetShown(h.winner == SG.myName)
-			r.rank:SetText(STAR)
-			r.name:SetText(("|cff8c8c94%s|r  %s"):format(h.test and "Test" or ns.Hall.WeekLabel(h.week), SG.shortName(h.winner)))
-			r.name:SetTextColor(classColor(e and e.class))
+			r.hl:SetShown(row.name == SG.myName)
+			r.rank:SetText("")
+			r.name:SetText(SG.shortName(row.name))
+			r.name:SetTextColor(classColor(row.e and row.e.class))
 			r.name:SetAlpha(1)
-			r.kills:SetText(SG.points(h.pts))
-			local paid = (h.paid or 0) == 1
-			if (h.prize or 0) > 0 then
-				r.assists:SetText(h.prize .. "g " .. (paid and ICON_DONE or ""))
-				r.assists:SetTextColor(unpack(paid and ACCENT or GOLD))
+			r.kills:SetText(row.honor)
+			r.assists:SetText(row.pay > 0 and SG.money(row.pay) or "unpaid")
+			r.assists:SetTextColor(unpack(row.pay > 0 and GOLD or MUTED))
+			r.tipColor = ACCENT
+			r.tip = { SG.shortName(row.name), row.title,
+				("%d honorable gnome%s %s"):format(row.honor, row.honor == 1 and "" or "s", preview and "this week so far" or "that week") }
+			if row.pay > 0 then
+				r.tip[#r.tip + 1] = ("Salary: %s%s"):format(SG.money(row.pay), percent < 100 and (" (%d%% of full pay, budget cap)"):format(percent) or "")
 			else
-				r.assists:SetText("")
-			end
-			r.tipColor = GOLD
-			r.tip = { SG.shortName(h.winner), "Employee of the Week",
-				("Week ending %s: %s points, %d gnome%s"):format(ns.Hall.WeekLabel(h.week), SG.points(h.pts), h.n, h.n == 1 and "" or "s"),
-				("Named by %s"):format(SG.shortName(h.by)) }
-			if (h.prize or 0) > 0 then
-				r.tip[#r.tip + 1] = paid and ("Bonus of %dg paid by %s"):format(h.prize, SG.shortName(h.paidBy))
-					or ("Bonus of %dg not paid yet"):format(h.prize)
+				local first = SG.TITLES[3]
+				r.tip[#r.tip + 1] = ("No salary yet: %d more honorable gnome%s to %s (%s a week)"):format(
+					first[1] - row.lifetime, first[1] - row.lifetime == 1 and "" or "s", first[2], SG.money(first[3]))
 			end
 		else
 			r:Hide()
@@ -1005,16 +1043,25 @@ local function refreshHall()
 	end
 	colHeads:SetShown(#list > 0)
 	empty:SetShown(#list == 0)
-	empty:SetText("No Employees of the Week yet.\n\n|cff8c8c94The first is named after the weekly\nreset on 2 December.|r")
-	local wins = 0
-	for _, h in ipairs(list) do
-		if h.winner == SG.myName then
-			wins = wins + 1
-		end
+	empty:SetText(preview and "No harvests yet this week.\n\n|cff8c8c94One honorable gnome puts you\non the payroll. First payday:\nafter the reset on 2 December.|r"
+		or "Nobody worked last week.\n\n|cff8c8c94No work, no pay: one honorable\ngnome a week earns your salary.|r")
+	local paid
+	if preview then
+		paid = "Preview"
+	elseif record then
+		paid = ("Paid %s"):format(ICON_DONE)
+	else
+		paid = "Unpaid"
 	end
-	local prize = ns.Hall.Prize()
-	footer:SetText(wins > 0 and ("You've won %d time%s"):format(wins, wins == 1 and "" or "s") or "Hall of Fame")
-	footerRight:SetText(SG.IsOfficer(SG.myName) == true and (prize > 0 and ("Bonus: %dg"):format(prize) or "/gnomes prize") or "")
+	footerRight:SetText(("%s  ·  %s"):format(#list > 0 and ("Total " .. SG.money(total)) or "Total -", paid))
+	local mine = myRow and list[myRow]
+	if mine and mine.pay > 0 then
+		footer:SetText(("You: |cff%s%s|r"):format(hex(GOLD), SG.money(mine.pay)))
+	else
+		-- Not paid (yet): how far to the first salaried title.
+		local first, honor = SG.TITLES[3], SG.honorCount(SG.me())
+		footer:SetText(honor < first[1] and ("You: %d to first salary"):format(first[1] - honor) or "You: -")
+	end
 end
 
 function UI.Refresh()
@@ -1050,12 +1097,17 @@ function UI.Refresh()
 
 	if settingsView then
 		sub:SetText("Settings")
+	elseif mode == "payroll" then
+		local week, preview = ns.Payroll.ViewWeek()
+		sub:SetText(preview and "Payroll  ·  this week so far" or ("Payroll  ·  week ending " .. ns.Hall.WeekLabel(week)))
 	elseif champion then
 		local _, pts = SG.lastWeekWinner()
 		sub:SetText(("%s Employee of the Week: |cff%s%s|r (%s pts)"):format(STAR, hex(GOLD), SG.shortName(champion), pts))
 	else
 		sub:SetText("Production Report")
 	end
+
+	frame.coin.icon:SetDesaturated(mode ~= "payroll")
 
 	local help, settings = mode == "help", mode == "settings"
 	helpPanel:SetShown(help)
@@ -1079,8 +1131,8 @@ function UI.Refresh()
 		refreshRecalls()
 	elseif mode == "mine" then
 		refreshMine()
-	elseif mode == "hall" then
-		refreshHall()
+	elseif mode == "payroll" then
+		refreshPayroll()
 	else
 		refreshBoard()
 	end
@@ -1100,7 +1152,7 @@ function UI.ShowView(view, show)
 		return
 	end
 	if show then
-		if mode ~= "help" and mode ~= "settings" and mode ~= "hall" then
+		if mode ~= "help" and mode ~= "settings" and mode ~= "payroll" then
 			lastMode = mode
 		end
 		mode = view
@@ -1167,6 +1219,15 @@ function UI.Notice(main, color, subText, note)
 	toast.main:SetTextColor(unpack(COLORS[color] or TEXT))
 	toast.sub:SetText(subText or "")
 	toast.note:SetText(note or "")
+	-- Logo and text side by side, centred as one group. The logo sits left of the widest
+	-- line, so a long detail line can't run underneath it.
+	local LOGO_W, GAP = 36, 10
+	local w = math.max(toast.main:GetStringWidth(), toast.sub:GetStringWidth(), toast.note:GetStringWidth())
+	local shift = (LOGO_W + GAP) / 2
+	toast.main:ClearAllPoints()
+	toast.main:SetPoint("TOP", toast, "TOP", shift, 0)
+	toast.logo:ClearAllPoints()
+	toast.logo:SetPoint("RIGHT", toast, "TOP", shift - w / 2 - GAP, -26)
 	toast.anim:Stop()
 	toast:Show()
 	toast.anim:Play()
@@ -1180,7 +1241,9 @@ function UI.Toast(e, info)
 	local main, color, note
 	if info.promoted then
 		main, color = "Promoted: " .. info.promoted, "gold"
-		note = ("%d gnomes harvested. HR has been notified."):format(e.total)
+		local _, _, _, pay = SG.jobTitle(SG.myName, SG.honorCount(e))
+		note = pay > 0 and ("Salary now %s a week. HR has been notified."):format(SG.money(pay))
+			or ("%d honorable gnomes. HR has been notified."):format(SG.honorCount(e))
 	elseif info.assist then
 		main, color, note = "Gnome assist", "white", "Sample sent to the lab."
 	else
@@ -1189,7 +1252,11 @@ function UI.Toast(e, info)
 			parts[#parts + 1] = "+" .. SG.points(info.points) .. " pts"
 		end
 		parts[#parts + 1] = e.week .. " this week"
-		note = LAB_NOTES[math.random(#LAB_NOTES)]
+		if info.honorable == false then
+			note = "Grey gnome: no credit toward promotion."
+		else
+			note = LAB_NOTES[math.random(#LAB_NOTES)]
+		end
 	end
 	UI.Notice(main, color, table.concat(parts, "  ·  ") .. (info.test and "  (test)" or ""), note)
 end
@@ -1315,7 +1382,7 @@ local function onUnitTooltip(tt, data)
 		end
 	end
 	if member then
-		tt:AddLine(SG.jobTitle(full, e and e.total or 0) .. " at Smoking Gnomes Inc.", ACCENT[1], ACCENT[2], ACCENT[3])
+		tt:AddLine(SG.jobTitle(full, SG.honorCount(e)) .. " at Smoking Gnomes Inc.", ACCENT[1], ACCENT[2], ACCENT[3])
 		if full == SG.lastWeekWinner() then
 			tt:AddLine(STAR .. " Employee of the Week", GOLD[1], GOLD[2], GOLD[3])
 		end
@@ -1463,7 +1530,7 @@ function SmokingGnomes_OnAddonCompartmentEnter(_, button)
 	local e = SG.me()
 	GameTooltip:SetOwner(button or UIParent, "ANCHOR_LEFT")
 	GameTooltip:AddLine("Smoking Gnomes Inc.", 1, 1, 1)
-	GameTooltip:AddLine(("%s  ·  %d this week (%s pts)"):format(SG.jobTitle(SG.myName, e.total), e.week, SG.points(e.wp)), ACCENT[1], ACCENT[2], ACCENT[3])
+	GameTooltip:AddLine(("%s  ·  %d this week (%s pts)"):format(SG.jobTitle(SG.myName, SG.honorCount(e)), e.week, SG.points(e.wp)), ACCENT[1], ACCENT[2], ACCENT[3])
 	local open = ns.Bounty.OpenCount()
 	if open > 0 then
 		GameTooltip:AddLine(open == 1 and "1 corporate spy at large" or (open .. " corporate spies at large"), RED[1], RED[2], RED[3])

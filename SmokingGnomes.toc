@@ -14,5 +14,6 @@ Sync.lua
 Bounty.lua
 Ledger.lua
 Hall.lua
+Payroll.lua
 UI.lua
 Gank.lua

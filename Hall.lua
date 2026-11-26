@@ -1,7 +1,8 @@
--- Smoking Gnomes Inc.: Hall of Fame and guild chat posts.
+-- Smoking Gnomes Inc.: Employee of the Week records and the weekly bonus.
 --
--- Hall of Fame: one record per week naming that week's Employee of the Week, the prize
--- and whether it was paid. Only the guild master and officers create or change records
+-- One record per week naming that week's Employee of the Week, the bonus and whether
+-- it was paid. (The Hall of Fame view that listed them is switched off for now; the
+-- records are still kept, so it can come back with the full history.) Only the guild master and officers create or change records
 -- (checked against the guild roster); everyone stores and relays them like the others.
 --   W|version|week|winner|points|gnomes|prize|paid|by|paidBy|u|signature
 -- week = SG.weekId() of the week that was won (the day number of the reset ending it).
@@ -110,16 +111,7 @@ function Hall.RelayList()
 	return out
 end
 
--- /gnomes test hall: a made-up winner to preview the Hall of Fame. Only on this
--- computer, never shared or posted, and gone after a /reload.
-function Hall.Test()
-	local cur = SG.weekId()
-	local week = cur + 7000 -- far from any real week
-	db()[week] = { week = week, winner = SG.myName, pts = 58, n = 12, prize = Hall.Prize() > 0 and Hall.Prize() or 50,
-		paid = 0, by = SG.myName, paidBy = "", u = SG.now(), test = true }
-	ns.UI.ShowView("hall", true)
-end
-
+-- Removes made-up winners from the old /gnomes test hall preview.
 function Hall.ClearTests()
 	for week, h in pairs(db()) do
 		if h.test then
