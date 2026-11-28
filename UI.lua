@@ -1741,7 +1741,7 @@ local function buildFrame()
 	local inner = disc(ring, 44, "BORDER")
 	inner:SetPoint("CENTER")
 	inner:SetVertexColor(0.047, 0.039, 0.031)
-	local logo = makeCrest(ring, 41)
+	local logo = makeCrest(ring, 44) -- fills the dark disc: the gold ring is its only frame
 	logo:SetPoint("CENTER")
 
 	local title = text(frame, 16, TITLE_GOLD)
