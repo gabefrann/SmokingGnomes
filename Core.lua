@@ -1208,6 +1208,7 @@ local HELP = {
 	"/gnomes prize <gold>  officers: the weekly Employee of the Week bonus (0 for none)",
 	"/gnomes paid  officers: mark the latest bonus as paid (thanks them in guild chat)",
 	"/gnomes ranks  every job title, the gnomes it takes and its weekly salary",
+	"/gnomes welcome  the short how-it-works page again",
 	"/gnomes payroll  last week's salaries: who earned what (open to everyone)",
 	"/gnomes payroll paid  officers: mark last week's payroll as paid (employees get a popup)",
 	"/gnomes payroll cap <gold>  officers: the most payroll may cost in a week (0 for no cap)",
@@ -1424,6 +1425,10 @@ SlashCmdList.SMOKINGGNOMES = function(msg)
 			info.promoted = nextTitle or "Chief Medical Officer"
 		end
 		SG.recordKill(info)
+	elseif cmd == "fonts" then
+		ns.UI.FontPreview()
+	elseif cmd == "welcome" then
+		ns.UI.ShowView("welcome", true)
 	elseif cmd == "ranks" or cmd == "titles" or cmd == "ladder" then
 		local lines, honor, mine = SG.ladderLines()
 		SG.print(("Job titles by lifetime honorable gnomes (you: %d, %s):"):format(honor, mine))

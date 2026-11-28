@@ -49,6 +49,21 @@ local function isOn()
 	return SG.db ~= nil and SG.db.settings.gank == true
 end
 
+-- Class and level of a player gank mode saw this session (the Spies tab uses the class
+-- for portraits), or nil.
+function Gank.Seen(name)
+	local s = name and spotted[name]
+	if not s then
+		for key, spot in pairs(spotted) do
+			if SG.sameName(key, name) then
+				s = spot
+				break
+			end
+		end
+	end
+	return s and s.class, s and s.level
+end
+
 local function plain(v)
 	if v == nil or SG.secret(v) then
 		return nil
@@ -244,6 +259,9 @@ end
 -- spot / time since I last saw them.
 function Gank.Status(s)
 	local lvl = s.level and s.level > 0 and ("|cff8c8c94Lvl|r " .. s.level .. "  ") or ""
+	if s.recall then
+		lvl = "|cffff6a5aSPY|r  " .. lvl
+	end
 	local unit = inView(s)
 	if unit then
 		return lvl .. (isDead(unit) and "|cff8c8c94dead|r" or "|cff4cb56bnear|r")
@@ -469,8 +487,14 @@ local function build()
 			savePosition()
 		end
 	end)
-	hud:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-	hud:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1)
+	-- Same frame as the main window: dark wood, 3 px edge, gold trim.
+	hud:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 2 })
+	hud:SetBackdropBorderColor(0.290, 0.208, 0.125, 1)
+	local trim = CreateFrame("Frame", nil, hud, "BackdropTemplate")
+	trim:SetPoint("TOPLEFT", 3, -3)
+	trim:SetPoint("BOTTOMRIGHT", -3, 3)
+	trim:SetBackdrop({ edgeFile = WHITE, edgeSize = 1 })
+	trim:SetBackdropBorderColor(0.722, 0.569, 0.247, 0.55)
 	local pos = SG.db.settings.gankPos
 	if pos then
 		hud:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
@@ -478,15 +502,15 @@ local function build()
 		hud:SetPoint("RIGHT", UIParent, "RIGHT", -220, 80)
 	end
 
-	hud.title = text(hud, 12, TEXT)
+	hud.title = text(hud, 12, { 1.0, 0.82, 0.0 })
 	hud.title:SetPoint("TOPLEFT", 10, -9)
-	hud.title:SetText("Gank mode")
+	hud.title:SetText("SIGHTING LOG")
 	hud.count = text(hud, 11, MUTED, "RIGHT")
 	hud.count:SetPoint("TOPRIGHT", -10, -10)
 
 	local div = hud:CreateTexture(nil, "ARTWORK")
 	div:SetTexture(WHITE)
-	div:SetVertexColor(BORDER[1], BORDER[2], BORDER[3], 0.6)
+	div:SetVertexColor(0.290, 0.208, 0.125, 1)
 	div:SetHeight(1)
 	div:SetPoint("TOPLEFT", 8, -28)
 	div:SetPoint("TOPRIGHT", -8, -28)
@@ -586,8 +610,8 @@ function Gank.ApplyLook()
 		return
 	end
 	local s = SG.db.settings
-	hud:SetScale(s.scale or 1)
-	hud:SetBackdropColor(0.06, 0.06, 0.07, s.opacity or 0.98)
+	hud:SetScale(s.gankScale or 1) -- its own size: the main window's grip and setting don't touch it
+	hud:SetBackdropColor(0.047, 0.035, 0.024, s.opacity or 0.98)
 end
 
 function Gank.Refresh()
@@ -656,11 +680,8 @@ function Gank.Refresh()
 		if s then
 			r:SetAttribute("macrotext1", macroFor(s.name))
 			r.name:SetText(s.name)
-			if s.recall then
-				r.name:SetTextColor(unpack(RED))
-			else
-				r.name:SetTextColor(classColor(s.class))
-			end
+			-- Class colour for everyone; spies are marked by the SPY tag in the status column.
+			r.name:SetTextColor(classColor(s.class))
 			r:Show()
 		else
 			r:SetAttribute("macrotext1", "")

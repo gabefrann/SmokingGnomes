@@ -19,7 +19,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           mkdir -p build/SmokingGnomes
-          rsync -a --exclude '.git*' --exclude '.github' --exclude 'build' --exclude 'README.md' ./ build/SmokingGnomes/
+          rsync -a --exclude '.git*' --exclude '.github' --exclude 'build' --exclude 'README.md' --exclude 'docs' ./ build/SmokingGnomes/
           sed -i "s/@project-version@/${VERSION#v}/" build/SmokingGnomes/SmokingGnomes.toc
           # The "-forever" suffix lets WowUp recognise the zip as a WoW Forever build even
           # when it can't read release.json.

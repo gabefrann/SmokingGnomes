@@ -29,7 +29,7 @@ Your title is based on lifetime **honorable** gnomes: a gnome counts unless it w
 | 250 | Chief Medical Officer | 3g |
 | Guild master | CEO | - |
 
-Your title shows on the Production Report, and in your tooltip to every guildmate running the addon. `/gnomes ranks` prints this table in game, and hovering your line at the bottom of the Payroll view shows it too.
+Your title shows on the Production Report, and in your tooltip to every guildmate running the addon. `/gnomes ranks` prints this table in game, and hovering "Your career" on the Lab Log shows it too.
 
 ## Payroll
 - **No work, no pay:** your salary is owed only for a week in which you harvested at least one honorable gnome. Inactive members cost nothing.
@@ -80,14 +80,16 @@ Turn it on with `/gnomes gank`, shift-click on the minimap button, the Settings 
 - Targeting always needs your click or key press. Addons can't choose a target by themselves, the same as Next!. The list can't change during combat, so it updates when the fight ends.
 
 ## Settings
-Click the cog in the window header, or type `/gnomes settings`: window size (70–150%), background opacity, gank mode, callout sound, popups and the minimap button.
+Click the cog in the window header, or type `/gnomes settings`: window size (70–150%, or drag the window's corner; the gank panel sizes separately by its own corner), background opacity, gank mode, callout sound, popups and the minimap button. **Done** goes back to the tab you were on, and **Slash commands** at the bottom lists the commands.
+
+Long lists (Production Report, PvP, Payroll, spies) scroll with the mouse wheel; your own line stays pinned at the bottom when it's off the page.
 
 ## Rules
 - **Gnome:** your killing blow (or your pet's) on a player whose race is Gnome.
 - **Assist:** a gnome killed by someone in your party or raid, or a gnome that dies near you while you're awarded honor for it (you helped, even if the killer isn't grouped with you). Assists score no points and are used only to break ties.
 - **PvP tab:** every Alliance player you (or your pet) kill in the open world, gnome or not, this week and lifetime. It's for general PvP stats; points, titles and Employee of the Week still come from gnomes only. Counting starts from version 0.17; earlier kills there are only your gnomes.
 - **World PvP only:** kills in battlegrounds and arenas don't count.
-- **Weekly points:** the Weekly board ranks by points. Each gnome scores by its level against yours, so a fair fight is worth the same at level 20 as at 60:
+- **Weekly points:** the Production Report's "This week" view ranks by points. Each gnome scores by its level against yours, so a fair fight is worth the same at level 20 as at 60:
 
   | The gnome is… | Points |
   |---|---|
@@ -123,6 +125,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70�
 | `/gnomes standings` | Show the login message again: this week's top 3, your place, and the Employee of the Week (it appears by itself about 30 seconds after you log in; switch it off in Settings) |
 | `/gnomes prize <gold>` | Officers: set the weekly bonus (0 for none) |
 | `/gnomes paid` | Officers: mark the latest bonus as paid |
+| `/gnomes welcome` | Show the short how-it-works page again (it opens by itself the first time) |
 | `/gnomes ranks` | Every job title, the honorable gnomes it takes and its weekly salary, with your place marked |
 | `/gnomes payroll` | Open the Payroll view: last week's salaries |
 | `/gnomes payroll paid` | Officers: mark last week's payroll as paid |
@@ -134,7 +137,7 @@ Click the cog in the window header, or type `/gnomes settings`: window size (70�
 | `/gnomes gank` | Gank mode on or off |
 | `/gnomes settings` | Window size, background opacity and switches |
 | `/gnomes minimap` | Hide or show the minimap button (left-click opens the window, right-click shows commands, drag to move) |
-| `/gnomes help` | List all commands in chat and open the Commands view. The **?** button in the window does the same |
+| `/gnomes help` | List all commands in chat and open the Commands view (also under Settings › Slash commands) |
 | `/gnomes crest` | Show the guild crest large with its exact colours (for screenshots) |
 | `/gnomes crest on` / `off` | Try the live guild crest instead of the logo file, or switch back |
 | `/gnomes killlog` | The last 20 kill signals this session: deaths near you, honor awards, party kills, and what was credited |
