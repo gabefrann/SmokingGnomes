@@ -1,5 +1,5 @@
-# Push a tag like v0.9.0 and this builds the addon zip and publishes a GitHub release.
-# WowUp ("Install from URL" with this repository) picks new releases up automatically.
+# Push a tag like v0.9.0 and this builds the addon zip, publishes a GitHub release and
+# uploads the same zip to CurseForge. WowUp picks new releases up from either.
 name: Release
 
 on:
@@ -12,6 +12,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CF_PROJECT_ID: "1836418" # curseforge.com/wow/addons/smoking-gnomes-inc
     steps:
       - uses: actions/checkout@v4
 
@@ -37,3 +40,27 @@ jobs:
             build/SmokingGnomes-${{ github.ref_name }}-forever.zip
             build/release.json
           generate_release_notes: true
+
+      # The same zip goes to CurseForge, for the WoW Forever game version that matches the
+      # .toc (interface 16001 -> "1.60.1"). Runs after the GitHub release, so a CurseForge
+      # problem never holds up WowUp's GitHub route. Skipped if the token secret is missing.
+      - name: Upload to CurseForge
+        if: ${{ env.CF_API_TOKEN != '' }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          API="https://wow.curseforge.com/api"
+          INTERFACE=$(grep -m1 '^## Interface:' SmokingGnomes.toc | tr -dc '0-9')
+          GAME_VERSION="$((INTERFACE / 10000)).$(((INTERFACE / 100) % 100)).$((INTERFACE % 100))"
+          IDS=$(curl -sS --fail-with-body -H "X-Api-Token: ${CF_API_TOKEN}" "${API}/game/versions" \
+            | jq -c --arg n "$GAME_VERSION" '[.[] | select(.name == $n) | .id]')
+          if [ "$(echo "$IDS" | jq 'length')" != "1" ]; then
+            echo "Expected exactly one CurseForge game version named ${GAME_VERSION}, found: ${IDS}"
+            exit 1
+          fi
+          echo "CurseForge game version ${GAME_VERSION}: id ${IDS}"
+          METADATA=$(jq -n --arg cl "$(git log -1 --pretty=%B)" --arg dn "$VERSION" --argjson gv "$IDS" \
+            '{changelog: $cl, changelogType: "text", displayName: $dn, gameVersions: $gv, releaseType: "release"}')
+          curl -sS --fail-with-body -H "X-Api-Token: ${CF_API_TOKEN}" \
+            --form-string "metadata=${METADATA}" \
+            -F "file=@build/SmokingGnomes-${VERSION}-forever.zip" \
+            "${API}/projects/${CF_PROJECT_ID}/upload-file"
